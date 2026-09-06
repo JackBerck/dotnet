@@ -1,1 +1,14 @@
 [10:54:36] Standalone Dev Manager initialized.
+[09:47:04] Start Menu Shortcut created at: C:\Users\ASUS\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Standalone Dev Manager.lnk
+[09:47:04] Standalone Dev Manager initialized.
+[09:47:10] Enabled Windows Startup: "D:\Code\dotnet\bin\Debug\net10.0-windows\dotnet.exe" --autostart
+[09:54:33] Start Menu Shortcut created at: C:\Users\ASUS\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Standalone Dev Manager.lnk
+[09:54:33] Standalone Dev Manager initialized.
+[09:54:59] Start Menu Shortcut created at: C:\Users\ASUS\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Standalone Dev Manager.lnk
+[09:55:00] Standalone Dev Manager initialized.
+[09:59:42] Start Menu Shortcut created at: C:\Users\ASUS\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Standalone Dev Manager.lnk
+[09:59:42] Standalone Dev Manager initialized.
+[09:59:47] Service 'nginx' Auto-Start on Boot set to: True
+[09:59:48] Service 'php-cgi' Auto-Start on Boot set to: True
+[09:59:56] Started Nginx Web Server (PID: 6236) on port 80
+[09:59:57] Started PHP 8.5 FastCGI (PID: 3624) on port 9000

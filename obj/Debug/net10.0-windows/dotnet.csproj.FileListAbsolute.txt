@@ -16,3 +16,5 @@ D:\Code\dotnet\obj\Debug\net10.0-windows\refint\dotnet.dll
 D:\Code\dotnet\obj\Debug\net10.0-windows\dotnet.pdb
 D:\Code\dotnet\obj\Debug\net10.0-windows\dotnet.genruntimeconfig.cache
 D:\Code\dotnet\obj\Debug\net10.0-windows\ref\dotnet.dll
+D:\Code\dotnet\bin\Debug\net10.0-windows\app.ico
+D:\Code\dotnet\bin\Debug\net10.0-windows\dotnet.png

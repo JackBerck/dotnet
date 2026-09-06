@@ -1,0 +1,10 @@
+[
+  {
+    "ServiceId": "nginx",
+    "AutoStartOnBoot": true
+  },
+  {
+    "ServiceId": "php-cgi",
+    "AutoStartOnBoot": true
+  }
+]
