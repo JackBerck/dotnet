@@ -149,10 +149,10 @@ public partial class Form1 : Form
         var titleLabel = new Label
         {
             Text = "Standalone Local Dev Environment Manager",
-            Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+            Font = new Font("Segoe UI", 11.5F, FontStyle.Bold),
             ForeColor = Color.White,
             AutoSize = true,
-            Location = new Point(15, 15)
+            Location = new Point(15, 18)
         };
 
         bool isAdmin = HostsFileManager.IsElevated();
@@ -161,8 +161,22 @@ public partial class Form1 : Form
             Text = isAdmin ? "[ Administrator ]" : "[ Standard User ]",
             ForeColor = isAdmin ? Color.FromArgb(78, 201, 176) : Color.FromArgb(244, 71, 71),
             AutoSize = true,
-            Location = new Point(400, 18),
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            Location = new Point(375, 20),
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+        };
+
+        _chkAutoStart = new CheckBox
+        {
+            Text = "Run on Boot",
+            ForeColor = Color.White,
+            AutoSize = true,
+            Location = new Point(530, 20),
+            Checked = StartupManager.IsRunOnStartupEnabled(),
+            Cursor = Cursors.Hand
+        };
+        _chkAutoStart.CheckedChanged += (s, e) =>
+        {
+            StartupManager.SetRunOnStartup(_chkAutoStart.Checked);
         };
 
         var btnStartAll = new Button
@@ -171,8 +185,8 @@ public partial class Form1 : Form
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Size = new Size(110, 32),
-            Location = new Point(700, 12),
+            Size = new Size(100, 32),
+            Location = new Point(680, 14),
             Cursor = Cursors.Hand
         };
         btnStartAll.FlatAppearance.BorderSize = 0;
@@ -184,8 +198,8 @@ public partial class Form1 : Form
             BackColor = Color.FromArgb(180, 40, 40),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Size = new Size(110, 32),
-            Location = new Point(820, 12),
+            Size = new Size(100, 32),
+            Location = new Point(790, 14),
             Cursor = Cursors.Hand
         };
         btnStopAll.FlatAppearance.BorderSize = 0;
@@ -197,26 +211,12 @@ public partial class Form1 : Form
             BackColor = Color.FromArgb(60, 60, 65),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Size = new Size(100, 32),
-            Location = new Point(940, 12),
+            Size = new Size(90, 32),
+            Location = new Point(900, 14),
             Cursor = Cursors.Hand
         };
         btnRefresh.FlatAppearance.BorderSize = 0;
         btnRefresh.Click += (s, e) => RefreshServicesStatus();
-
-        _chkAutoStart = new CheckBox
-        {
-            Text = "Run on Boot",
-            ForeColor = Color.White,
-            AutoSize = true,
-            Location = new Point(560, 18),
-            Checked = StartupManager.IsRunOnStartupEnabled(),
-            Cursor = Cursors.Hand
-        };
-        _chkAutoStart.CheckedChanged += (s, e) =>
-        {
-            StartupManager.SetRunOnStartup(_chkAutoStart.Checked);
-        };
 
         headerPanel.Controls.Add(titleLabel);
         headerPanel.Controls.Add(_adminStatusLabel);
@@ -463,12 +463,44 @@ public partial class Form1 : Form
 
     private async Task StartSingleService(DevServiceInfo svc)
     {
-        // Port conflict check before start
-        var conflict = PortConflictDetector.CheckPort(svc.Port);
-        if (conflict.IsInUse && conflict.ProcessId != svc.ProcessId)
+        // 1. Refresh status first
+        if (svc.Type == DevServiceType.WindowsService)
         {
+            svc.Status = WindowsServiceManager.GetStatus(svc.WindowsServiceName);
+        }
+        else
+        {
+            svc.Status = ProcessServiceManager.GetStatus(svc);
+        }
+
+        if (svc.Status == ServiceStatus.Running)
+        {
+            // Already running! Nothing to do.
+            return;
+        }
+
+        // 2. Inspect port occupation
+        var conflict = PortConflictDetector.CheckPort(svc.Port);
+        if (conflict.IsInUse)
+        {
+            // Check if the occupying process is actually THIS service itself
+            string procName = conflict.ProcessName.ToLowerInvariant();
+            bool isOwnProcess = (procName.Contains("mysql") && svc.Id.Contains("mysql"))
+                             || (procName.Contains("postgres") && svc.Id.Contains("postgres"))
+                             || ((procName.Contains("memurai") || procName.Contains("redis")) && svc.Id.Contains("redis"))
+                             || (procName.Contains("nginx") && svc.Id.Contains("nginx"))
+                             || (procName.Contains("php") && svc.Id.Contains("php"));
+
+            if (isOwnProcess)
+            {
+                svc.ProcessId = conflict.ProcessId;
+                svc.Status = ServiceStatus.Running;
+                AppLogger.Log($"{svc.Name} is already active on port {svc.Port} (PID {conflict.ProcessId}).");
+                return;
+            }
+
             MessageBox.Show(
-                $"Port conflict detected!\nPort {svc.Port} is already occupied by process: {conflict.ProcessName} (PID {conflict.ProcessId}).\nPlease stop the conflicting process first.",
+                $"Port conflict detected!\nPort {svc.Port} is already occupied by external process: {conflict.ProcessName} (PID {conflict.ProcessId}).\nPlease stop the conflicting process first.",
                 "Port Conflict Warning",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning
@@ -1191,7 +1223,24 @@ public partial class Form1 : Form
             Visible = true
         };
 
+        _notifyIcon.MouseClick += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                RestoreFromTray();
+            }
+        };
+
         _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == Program.WM_RESTORE_APP)
+        {
+            RestoreFromTray();
+        }
+        base.WndProc(ref m);
     }
 
     private void RestoreFromTray()
@@ -1210,7 +1259,7 @@ public partial class Form1 : Form
             e.Cancel = true;
             this.Hide();
             this.ShowInTaskbar = false;
-            _notifyIcon.ShowBalloonTip(2000, "Standalone Dev Manager", "Aplikasi berjalan di system tray. Klik 2x icon tray untuk membuka kembali.", ToolTipIcon.Info);
+            _notifyIcon.ShowBalloonTip(2000, "Standalone Dev Manager", "Aplikasi berjalan di system tray. Klik icon tray untuk membuka kembali.", ToolTipIcon.Info);
         }
         else
         {
