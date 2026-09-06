@@ -23,15 +23,29 @@ public partial class Form1 : Form
     private TextBox _phpPostMax = null!;
     private TextBox _phpMaxExec = null!;
     private Label _adminStatusLabel = null!;
+    private NotifyIcon _notifyIcon = null!;
+    private ContextMenuStrip _trayMenu = null!;
+    private CheckBox _chkAutoStart = null!;
+    private bool _allowClose = false;
+    private bool _startMinimized = false;
 
-    public Form1()
+    public Form1(bool startMinimized = false)
     {
+        _startMinimized = startMinimized;
         InitializeComponent();
         SetupServicesList();
         BuildCustomUi();
+        SetupSystemTray();
         AppLogger.OnLog += AppendLog;
         AppLogger.Log("Standalone Dev Manager initialized.");
         RefreshServicesStatus();
+
+        if (_startMinimized)
+        {
+            this.WindowState = FormWindowState.Minimized;
+            this.ShowInTaskbar = false;
+            this.Hide();
+        }
     }
 
     private void SetupServicesList()
@@ -163,8 +177,23 @@ public partial class Form1 : Form
         btnRefresh.FlatAppearance.BorderSize = 0;
         btnRefresh.Click += (s, e) => RefreshServicesStatus();
 
+        _chkAutoStart = new CheckBox
+        {
+            Text = "Run on Boot",
+            ForeColor = Color.White,
+            AutoSize = true,
+            Location = new Point(560, 18),
+            Checked = StartupManager.IsRunOnStartupEnabled(),
+            Cursor = Cursors.Hand
+        };
+        _chkAutoStart.CheckedChanged += (s, e) =>
+        {
+            StartupManager.SetRunOnStartup(_chkAutoStart.Checked);
+        };
+
         headerPanel.Controls.Add(titleLabel);
         headerPanel.Controls.Add(_adminStatusLabel);
+        headerPanel.Controls.Add(_chkAutoStart);
         headerPanel.Controls.Add(btnStartAll);
         headerPanel.Controls.Add(btnStopAll);
         headerPanel.Controls.Add(btnRefresh);
@@ -952,5 +981,112 @@ public partial class Form1 : Form
         tab.Controls.Add(gbDocker);
 
         return tab;
+    }
+
+    private void SetupSystemTray()
+    {
+        Icon? appIcon = null;
+        string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+        string pngPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dotnet.png");
+
+        if (File.Exists(icoPath))
+        {
+            try { appIcon = new Icon(icoPath); } catch { }
+        }
+        
+        if (appIcon == null && File.Exists(pngPath))
+        {
+            try
+            {
+                using var bmp = new Bitmap(pngPath);
+                appIcon = Icon.FromHandle(bmp.GetHicon());
+            }
+            catch { }
+        }
+
+        if (appIcon != null)
+        {
+            this.Icon = appIcon;
+        }
+
+        _trayMenu = new ContextMenuStrip();
+
+        var mnuShow = new ToolStripMenuItem("Tampilkan Dashboard", null, (s, e) => RestoreFromTray());
+        mnuShow.Font = new Font(mnuShow.Font, FontStyle.Bold);
+
+        var mnuStartAll = new ToolStripMenuItem("▶ Start All Services", null, async (s, e) => await StartAllGroupServices());
+        var mnuStopAll = new ToolStripMenuItem("⏹ Stop All Services", null, async (s, e) => await StopAllGroupServices());
+
+        var mnuAutoStart = new ToolStripMenuItem("⚙ Run on Windows Boot", null, (s, e) =>
+        {
+            var item = (ToolStripMenuItem)s!;
+            bool enable = !item.Checked;
+            if (StartupManager.SetRunOnStartup(enable))
+            {
+                item.Checked = enable;
+                if (_chkAutoStart != null) _chkAutoStart.Checked = enable;
+            }
+        })
+        { Checked = StartupManager.IsRunOnStartupEnabled() };
+
+        var mnuShortcut = new ToolStripMenuItem("📌 Register in Start Menu", null, (s, e) =>
+        {
+            if (StartMenuShortcutManager.CreateStartMenuShortcut())
+            {
+                MessageBox.Show("Start Menu shortcut created! App is now searchable in Windows Search.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        });
+
+        var mnuExit = new ToolStripMenuItem("❌ Keluar / Exit", null, (s, e) =>
+        {
+            _allowClose = true;
+            _notifyIcon.Visible = false;
+            Application.Exit();
+        });
+
+        _trayMenu.Items.Add(mnuShow);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add(mnuStartAll);
+        _trayMenu.Items.Add(mnuStopAll);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add(mnuAutoStart);
+        _trayMenu.Items.Add(mnuShortcut);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add(mnuExit);
+
+        _notifyIcon = new NotifyIcon
+        {
+            Icon = appIcon ?? SystemIcons.Application,
+            Text = "Standalone Dev Manager",
+            ContextMenuStrip = _trayMenu,
+            Visible = true
+        };
+
+        _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+    }
+
+    private void RestoreFromTray()
+    {
+        this.Show();
+        this.WindowState = FormWindowState.Normal;
+        this.ShowInTaskbar = true;
+        this.BringToFront();
+        this.Activate();
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (!_allowClose && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            this.Hide();
+            this.ShowInTaskbar = false;
+            _notifyIcon.ShowBalloonTip(2000, "Standalone Dev Manager", "Aplikasi berjalan di system tray. Klik 2x icon tray untuk membuka kembali.", ToolTipIcon.Info);
+        }
+        else
+        {
+            _notifyIcon.Visible = false;
+            base.OnFormClosing(e);
+        }
     }
 }
