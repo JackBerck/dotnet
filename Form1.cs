@@ -40,11 +40,33 @@ public partial class Form1 : Form
         AppLogger.Log("Standalone Dev Manager initialized.");
         RefreshServicesStatus();
 
+        // Automatically start services marked for Boot Auto-Start
+        Task.Run(async () => await AutoStartBootServices());
+
         if (_startMinimized)
         {
             this.WindowState = FormWindowState.Minimized;
             this.ShowInTaskbar = false;
             this.Hide();
+        }
+    }
+
+    private async Task AutoStartBootServices()
+    {
+        foreach (var svc in _services)
+        {
+            if (svc.AutoStartOnBoot)
+            {
+                await StartSingleService(svc);
+            }
+        }
+        if (InvokeRequired)
+        {
+            Invoke(new Action(RefreshServicesStatus));
+        }
+        else
+        {
+            RefreshServicesStatus();
         }
     }
 
@@ -57,7 +79,8 @@ public partial class Form1 : Form
             Type = DevServiceType.WindowsService,
             WindowsServiceName = "MySQL84",
             Port = 3306,
-            AutoStartWithGroup = true
+            AutoStartWithGroup = true,
+            AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("mysql", true)
         });
 
         _services.Add(new DevServiceInfo
@@ -67,7 +90,8 @@ public partial class Form1 : Form
             Type = DevServiceType.WindowsService,
             WindowsServiceName = "postgresql-x64-17",
             Port = 5432,
-            AutoStartWithGroup = true
+            AutoStartWithGroup = true,
+            AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("postgres", true)
         });
 
         _services.Add(new DevServiceInfo
@@ -77,7 +101,8 @@ public partial class Form1 : Form
             Type = DevServiceType.WindowsService,
             WindowsServiceName = "Memurai",
             Port = 6379,
-            AutoStartWithGroup = true
+            AutoStartWithGroup = true,
+            AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("redis", true)
         });
 
         _services.Add(new DevServiceInfo
@@ -87,7 +112,8 @@ public partial class Form1 : Form
             Type = DevServiceType.ManagedProcess,
             ExecutablePath = @"C:\tools\nginx\nginx.exe",
             Port = 80,
-            AutoStartWithGroup = false // Toggleable
+            AutoStartWithGroup = false,
+            AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("nginx", false)
         });
 
         _services.Add(new DevServiceInfo
@@ -98,7 +124,8 @@ public partial class Form1 : Form
             ExecutablePath = @"C:\tools\php85\php-cgi.exe",
             Arguments = "-b 127.0.0.1:9000",
             Port = 9000,
-            AutoStartWithGroup = false // Toggleable
+            AutoStartWithGroup = false,
+            AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("php-cgi", false)
         });
     }
 
@@ -358,8 +385,24 @@ public partial class Form1 : Form
         {
             Text = svc.ProcessId.HasValue ? $"PID: {svc.ProcessId}" : "",
             ForeColor = Color.DarkGray,
-            Location = new Point(580, 22),
+            Location = new Point(530, 22),
             AutoSize = true
+        };
+
+        var chkAutoBoot = new CheckBox
+        {
+            Text = "Auto-Start Boot",
+            Checked = svc.AutoStartOnBoot,
+            ForeColor = Color.FromArgb(200, 200, 200),
+            Font = new Font("Segoe UI", 9F),
+            Location = new Point(640, 20),
+            AutoSize = true,
+            Cursor = Cursors.Hand
+        };
+        chkAutoBoot.CheckedChanged += (s, e) =>
+        {
+            svc.AutoStartOnBoot = chkAutoBoot.Checked;
+            ServiceSettingsManager.SetAutoStartOnBoot(svc.Id, svc.AutoStartOnBoot);
         };
 
         var btnToggle = new Button
@@ -369,7 +412,7 @@ public partial class Form1 : Form
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Size = new Size(90, 30),
-            Location = new Point(780, 15),
+            Location = new Point(790, 15),
             Cursor = Cursors.Hand
         };
         btnToggle.FlatAppearance.BorderSize = 0;
@@ -394,7 +437,7 @@ public partial class Form1 : Form
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Size = new Size(80, 30),
-            Location = new Point(880, 15),
+            Location = new Point(890, 15),
             Cursor = Cursors.Hand
         };
         btnRestart.FlatAppearance.BorderSize = 0;
@@ -411,6 +454,7 @@ public partial class Form1 : Form
         card.Controls.Add(lblPort);
         card.Controls.Add(lblStatus);
         card.Controls.Add(lblPid);
+        card.Controls.Add(chkAutoBoot);
         card.Controls.Add(btnToggle);
         card.Controls.Add(btnRestart);
 
@@ -784,12 +828,43 @@ public partial class Form1 : Form
         var btnSavePhp = new Button { Text = "Save php.ini", Location = new Point(140, 250), Width = 120, Height = 32, BackColor = Color.FromArgb(0, 122, 204), FlatStyle = FlatStyle.Flat };
         btnSavePhp.Click += (s, e) => SavePhpIniValues();
 
+        var btnOpenPhpNotepad = new Button 
+        { 
+            Text = "📝 Edit in Notepad", 
+            Location = new Point(280, 250), 
+            Width = 160, 
+            Height = 32, 
+            BackColor = Color.FromArgb(40, 130, 70), 
+            FlatStyle = FlatStyle.Flat,
+            Cursor = Cursors.Hand 
+        };
+        btnOpenPhpNotepad.Click += (s, e) =>
+        {
+            try
+            {
+                string iniPath = PhpConfigManager.GetIniPath();
+                if (File.Exists(iniPath))
+                {
+                    System.Diagnostics.Process.Start("notepad.exe", iniPath);
+                }
+                else
+                {
+                    MessageBox.Show($"php.ini not found at {iniPath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to open Notepad: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+
         pnlPhp.Controls.Add(lblPath);
         pnlPhp.Controls.Add(l1); pnlPhp.Controls.Add(_phpMemoryLimit);
         pnlPhp.Controls.Add(l2); pnlPhp.Controls.Add(_phpUploadMax);
         pnlPhp.Controls.Add(l3); pnlPhp.Controls.Add(_phpPostMax);
         pnlPhp.Controls.Add(l4); pnlPhp.Controls.Add(_phpMaxExec);
         pnlPhp.Controls.Add(btnLoadPhp); pnlPhp.Controls.Add(btnSavePhp);
+        pnlPhp.Controls.Add(btnOpenPhpNotepad);
 
         // Nginx Manager Group Box
         var pnlNginx = new GroupBox
@@ -803,8 +878,8 @@ public partial class Form1 : Form
         var btnTestNginx = new Button
         {
             Text = "🧪 Validate Syntax (nginx -t)",
-            Location = new Point(30, 50),
-            Size = new Size(220, 40),
+            Location = new Point(30, 45),
+            Size = new Size(220, 38),
             BackColor = Color.FromArgb(60, 60, 65),
             FlatStyle = FlatStyle.Flat,
             Cursor = Cursors.Hand
@@ -818,8 +893,8 @@ public partial class Form1 : Form
         var btnReloadNginx = new Button
         {
             Text = "⚡ Reload Nginx (nginx -s reload)",
-            Location = new Point(30, 110),
-            Size = new Size(220, 40),
+            Location = new Point(30, 95),
+            Size = new Size(220, 38),
             BackColor = Color.FromArgb(0, 122, 204),
             FlatStyle = FlatStyle.Flat,
             Cursor = Cursors.Hand
@@ -830,8 +905,62 @@ public partial class Form1 : Form
             MessageBox.Show(res.Output, res.Success ? "Nginx Reload Success" : "Nginx Reload Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         };
 
+        var btnOpenNginxNotepad = new Button
+        {
+            Text = "📝 Edit nginx.conf in Notepad",
+            Location = new Point(30, 150),
+            Size = new Size(220, 38),
+            BackColor = Color.FromArgb(40, 130, 70),
+            FlatStyle = FlatStyle.Flat,
+            Cursor = Cursors.Hand
+        };
+        btnOpenNginxNotepad.Click += (s, e) =>
+        {
+            try
+            {
+                string confPath = @"C:\tools\nginx\conf\nginx.conf";
+                if (File.Exists(confPath))
+                {
+                    System.Diagnostics.Process.Start("notepad.exe", confPath);
+                }
+                else
+                {
+                    MessageBox.Show($"nginx.conf not found at {confPath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to open Notepad: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+
+        var btnOpenSitesFolder = new Button
+        {
+            Text = "📁 Open Sites Config Folder",
+            Location = new Point(30, 200),
+            Size = new Size(220, 38),
+            BackColor = Color.FromArgb(60, 60, 65),
+            FlatStyle = FlatStyle.Flat,
+            Cursor = Cursors.Hand
+        };
+        btnOpenSitesFolder.Click += (s, e) =>
+        {
+            try
+            {
+                string sitesFolder = @"C:\tools\nginx\conf\sites\";
+                Directory.CreateDirectory(sitesFolder);
+                System.Diagnostics.Process.Start("explorer.exe", sitesFolder);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to open sites folder: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+
         pnlNginx.Controls.Add(btnTestNginx);
         pnlNginx.Controls.Add(btnReloadNginx);
+        pnlNginx.Controls.Add(btnOpenNginxNotepad);
+        pnlNginx.Controls.Add(btnOpenSitesFolder);
 
         tab.Controls.Add(pnlPhp);
         tab.Controls.Add(pnlNginx);

@@ -20,4 +20,5 @@ public class DevServiceInfo
     public int? ProcessId { get; set; }
     public string StatusMessage { get; set; } = string.Empty;
     public bool AutoStartWithGroup { get; set; } = true;
+    public bool AutoStartOnBoot { get; set; } = true;
 }
