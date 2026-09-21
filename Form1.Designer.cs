@@ -23,7 +23,7 @@ partial class Form1
         // 
         this.ClientSize = new System.Drawing.Size(1024, 700);
         this.Name = "Form1";
-        this.Text = "Standalone Dev Manager (Laragon Native Replacement)";
+        this.Text = "Dotnet (Laragon Native Replacement)";
         this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
         this.ResumeLayout(false);
     }

@@ -4,7 +4,7 @@ namespace dotnet;
 
 static class Program
 {
-    private const string MutexName = "Global\\StandaloneDevManager_SingleInstance_Mutex";
+    private const string MutexName = "Global\\Dotnet_SingleInstance_Mutex";
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     public static extern int RegisterWindowMessage(string lpString);
@@ -13,7 +13,7 @@ static class Program
     public static extern bool PostMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
 
     public static readonly int HWND_BROADCAST = 0xffff;
-    public static readonly int WM_RESTORE_APP = RegisterWindowMessage("WM_RESTORE_STANDALONE_DEV_MANAGER");
+    public static readonly int WM_RESTORE_APP = RegisterWindowMessage("WM_RESTORE_DOTNET");
 
     /// <summary>
     ///  The main entry point for the application.

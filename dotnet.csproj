@@ -8,8 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <AssemblyTitle>Standalone Dev Manager</AssemblyTitle>
-    <Product>Standalone Dev Manager</Product>
+    <AssemblyTitle>Dotnet</AssemblyTitle>
+    <Product>Dotnet</Product>
     <Description>Native Windows Local Development Manager</Description>
   </PropertyGroup>
 

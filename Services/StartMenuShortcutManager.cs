@@ -14,7 +14,7 @@ public class StartMenuShortcutManager
             );
 
             Directory.CreateDirectory(startMenuFolder);
-            string shortcutPath = Path.Combine(startMenuFolder, "Standalone Dev Manager.lnk");
+            string shortcutPath = Path.Combine(startMenuFolder, "Dotnet.lnk");
 
             string exePath = Process.GetCurrentProcess().MainModule?.FileName 
                 ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dotnet.exe");

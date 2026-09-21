@@ -37,7 +37,7 @@ public partial class Form1 : Form
         BuildCustomUi();
         SetupSystemTray();
         AppLogger.OnLog += AppendLog;
-        AppLogger.Log("Standalone Dev Manager initialized.");
+        AppLogger.Log("Dotnet initialized.");
         RefreshServicesStatus();
 
         // Automatically start services marked for Boot Auto-Start
@@ -131,7 +131,7 @@ public partial class Form1 : Form
 
     private void BuildCustomUi()
     {
-        this.Text = "Standalone Dev Manager (Native Laragon Replacement)";
+        this.Text = "Dotnet (Native Laragon Replacement)";
         this.Size = new Size(1100, 750);
         this.BackColor = Color.FromArgb(30, 30, 30);
         this.ForeColor = Color.White;
@@ -1218,7 +1218,7 @@ public partial class Form1 : Form
         _notifyIcon = new NotifyIcon
         {
             Icon = appIcon ?? SystemIcons.Application,
-            Text = "Standalone Dev Manager",
+            Text = "Dotnet",
             ContextMenuStrip = _trayMenu,
             Visible = true
         };
@@ -1259,7 +1259,7 @@ public partial class Form1 : Form
             e.Cancel = true;
             this.Hide();
             this.ShowInTaskbar = false;
-            _notifyIcon.ShowBalloonTip(2000, "Standalone Dev Manager", "Aplikasi berjalan di system tray. Klik icon tray untuk membuka kembali.", ToolTipIcon.Info);
+            _notifyIcon.ShowBalloonTip(2000, "Dotnet", "Aplikasi berjalan di system tray. Klik icon tray untuk membuka kembali.", ToolTipIcon.Info);
         }
         else
         {

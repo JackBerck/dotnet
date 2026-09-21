@@ -6,7 +6,7 @@ namespace dotnet.Services;
 public class StartupManager
 {
     private const string RunKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string AppName = "StandaloneDevManager";
+    private const string AppName = "Dotnet";
 
     public static bool IsRunOnStartupEnabled()
     {
