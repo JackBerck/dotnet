@@ -5,7 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using dotnet.Catalog;
 using dotnet.Config;
+using dotnet.Env;
+using dotnet.Installation;
 using dotnet.Models;
 using dotnet.Services;
 
@@ -14,9 +17,24 @@ namespace dotnet;
 public partial class Form1 : Form
 {
     private readonly List<DevServiceInfo> _services = new();
+    private readonly CatalogLoader _catalogLoader = new();
+    private readonly InstalledToolStore _toolStore = new();
     private TabControl _tabControl = null!;
     private RichTextBox _logBox = null!;
     private FlowLayoutPanel _servicesPanel = null!;
+    private DataGridView _toolsGrid = null!;
+    private Label _lblToolName = null!;
+    private Label _lblToolCategory = null!;
+    private Label _lblToolLicense = null!;
+    private Label _lblToolStatus = null!;
+    private Label _lblToolInstallPath = null!;
+    private ComboBox _cboToolVersion = null!;
+    private Button _btnInstallTool = null!;
+    private Button _btnUninstallTool = null!;
+    private Button _btnAdoptTool = null!;
+    private ProgressBar _toolProgressBar = null!;
+    private Label _toolProgressLabel = null!;
+    private ToolDefinition? _selectedTool = null;
     private DataGridView _projectsGrid = null!;
     private DataGridView _hostsGrid = null!;
     private TextBox _phpMemoryLimit = null!;
@@ -33,6 +51,8 @@ public partial class Form1 : Form
     public Form1(bool startMinimized = false)
     {
         _startMinimized = startMinimized;
+        _catalogLoader.LoadCatalog();
+        _toolStore.Load();
         InitializeComponent();
         SetupServicesList();
         BuildCustomUi();
@@ -268,19 +288,23 @@ public partial class Form1 : Form
         };
         tabDashboard.Controls.Add(_servicesPanel);
 
-        // Tab 2: Projects
+        // Tab 2: Tools & Packages
+        var tabTools = CreateToolsTab();
+
+        // Tab 3: Projects
         var tabProjects = CreateProjectsTab();
 
-        // Tab 3: Hosts File Manager
+        // Tab 4: Hosts File Manager
         var tabHosts = CreateHostsTab();
 
-        // Tab 4: PHP & Nginx Configuration
+        // Tab 5: PHP & Nginx Configuration
         var tabConfig = CreateConfigTab();
 
-        // Tab 5: Port Diagnostics & Docker Check
+        // Tab 6: Port Diagnostics & Docker Check
         var tabDiagnostics = CreateDiagnosticsTab();
 
         _tabControl.TabPages.Add(tabDashboard);
+        _tabControl.TabPages.Add(tabTools);
         _tabControl.TabPages.Add(tabProjects);
         _tabControl.TabPages.Add(tabHosts);
         _tabControl.TabPages.Add(tabConfig);
@@ -584,7 +608,355 @@ public partial class Form1 : Form
         RefreshServicesStatus();
     }
 
-    // TAB 2: PROJECTS
+    // TAB 2: TOOLS & PACKAGES
+    private TabPage CreateToolsTab()
+    {
+        var tab = new TabPage("Tools & Packages") { BackColor = SystemColors.Control };
+
+        var topBar = new Panel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(5) };
+        var btnScanAdopt = new Button
+        {
+            Text = "🔍 Scan & Adopt Local Tools",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(185, 26),
+            Location = new Point(8, 6),
+            Cursor = Cursors.Hand
+        };
+        btnScanAdopt.Click += (s, e) => ScanAndAdoptLocalTools();
+
+        var btnRefreshTools = new Button
+        {
+            Text = "🔄 Refresh Catalog",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(130, 26),
+            Location = new Point(200, 6),
+            Cursor = Cursors.Hand
+        };
+        btnRefreshTools.Click += (s, e) => RefreshToolsGrid();
+
+        topBar.Controls.Add(btnScanAdopt);
+        topBar.Controls.Add(btnRefreshTools);
+
+        // Bottom Progress Panel
+        var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 36, Padding = new Padding(8, 6, 8, 6) };
+        _toolProgressBar = new ProgressBar { Location = new Point(8, 8), Size = new Size(350, 18), Visible = false };
+        _toolProgressLabel = new Label { Location = new Point(365, 9), AutoSize = true, Text = "Ready", ForeColor = SystemColors.ControlDarkDark };
+        bottomPanel.Controls.Add(_toolProgressBar);
+        bottomPanel.Controls.Add(_toolProgressLabel);
+
+        // Right details panel
+        var detailsPanel = new Panel { Dock = DockStyle.Right, Width = 450, Padding = new Padding(10) };
+        var grp = new GroupBox
+        {
+            Text = "Tool Information & Operations",
+            Dock = DockStyle.Fill,
+            ForeColor = SystemColors.ControlText,
+            Padding = new Padding(15)
+        };
+
+        var l1 = new Label { Text = "Tool Name:", Location = new Point(15, 30), AutoSize = true, Font = new Font("Tahoma", 8.25F, FontStyle.Bold) };
+        _lblToolName = new Label { Text = "-", Location = new Point(110, 30), AutoSize = true };
+
+        var l2 = new Label { Text = "Category:", Location = new Point(15, 60), AutoSize = true, Font = new Font("Tahoma", 8.25F, FontStyle.Bold) };
+        _lblToolCategory = new Label { Text = "-", Location = new Point(110, 60), AutoSize = true };
+
+        var l3 = new Label { Text = "License:", Location = new Point(15, 90), AutoSize = true, Font = new Font("Tahoma", 8.25F, FontStyle.Bold) };
+        _lblToolLicense = new Label { Text = "-", Location = new Point(110, 90), AutoSize = true };
+
+        var l4 = new Label { Text = "Status:", Location = new Point(15, 120), AutoSize = true, Font = new Font("Tahoma", 8.25F, FontStyle.Bold) };
+        _lblToolStatus = new Label { Text = "-", Location = new Point(110, 120), AutoSize = true, Font = new Font("Tahoma", 8.25F, FontStyle.Bold) };
+
+        var l5 = new Label { Text = "Install Path:", Location = new Point(15, 150), AutoSize = true, Font = new Font("Tahoma", 8.25F, FontStyle.Bold) };
+        _lblToolInstallPath = new Label { Text = "-", Location = new Point(110, 150), AutoSize = true, MaximumSize = new Size(310, 40) };
+
+        var l6 = new Label { Text = "Select Version:", Location = new Point(15, 195), AutoSize = true };
+        _cboToolVersion = new ComboBox { Location = new Point(110, 193), Width = 180, DropDownStyle = ComboBoxStyle.DropDownList };
+
+        _btnInstallTool = new Button
+        {
+            Text = "⬇ Download & Install",
+            Location = new Point(15, 235),
+            Size = new Size(160, 30),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        _btnInstallTool.Click += async (s, e) => await InstallSelectedToolAsync();
+
+        _btnUninstallTool = new Button
+        {
+            Text = "🗑 Uninstall / Remove",
+            Location = new Point(185, 235),
+            Size = new Size(150, 30),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand,
+            Enabled = false
+        };
+        _btnUninstallTool.Click += (s, e) => UninstallSelectedTool();
+
+        _btnAdoptTool = new Button
+        {
+            Text = "📂 Adopt Custom Local Folder...",
+            Location = new Point(15, 275),
+            Size = new Size(220, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        _btnAdoptTool.Click += (s, e) => AdoptCustomLocalFolder();
+
+        grp.Controls.Add(l1); grp.Controls.Add(_lblToolName);
+        grp.Controls.Add(l2); grp.Controls.Add(_lblToolCategory);
+        grp.Controls.Add(l3); grp.Controls.Add(_lblToolLicense);
+        grp.Controls.Add(l4); grp.Controls.Add(_lblToolStatus);
+        grp.Controls.Add(l5); grp.Controls.Add(_lblToolInstallPath);
+        grp.Controls.Add(l6); grp.Controls.Add(_cboToolVersion);
+        grp.Controls.Add(_btnInstallTool);
+        grp.Controls.Add(_btnUninstallTool);
+        grp.Controls.Add(_btnAdoptTool);
+        detailsPanel.Controls.Add(grp);
+
+        // Center / Left Grid
+        _toolsGrid = new DataGridView
+        {
+            Dock = DockStyle.Fill,
+            BackgroundColor = SystemColors.Window,
+            ForeColor = SystemColors.ControlText,
+            BorderStyle = BorderStyle.Fixed3D,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            AllowUserToAddRows = false
+        };
+
+        _toolsGrid.Columns.Add("Id", "ID");
+        if (_toolsGrid.Columns["Id"] != null) _toolsGrid.Columns["Id"]!.Visible = false;
+        _toolsGrid.Columns.Add("Name", "Tool Name");
+        _toolsGrid.Columns.Add("Category", "Category");
+        _toolsGrid.Columns.Add("Version", "Active Version");
+        _toolsGrid.Columns.Add("Status", "Status");
+
+        _toolsGrid.SelectionChanged += (s, e) => OnToolSelected();
+
+        RefreshToolsGrid();
+
+        tab.Controls.Add(_toolsGrid);
+        tab.Controls.Add(detailsPanel);
+        tab.Controls.Add(bottomPanel);
+        tab.Controls.Add(topBar);
+
+        return tab;
+    }
+
+    private void RefreshToolsGrid()
+    {
+        _toolStore.Load();
+        _catalogLoader.LoadCatalog();
+        _toolsGrid.Rows.Clear();
+
+        foreach (var tool in _catalogLoader.Tools)
+        {
+            var installed = _toolStore.GetTool(tool.Id);
+            string versionStr = installed != null ? installed.Version : "-";
+            string statusStr = "Not Installed";
+            if (installed != null)
+            {
+                statusStr = installed.IsAdopted ? "Adopted (Local)" : "Installed";
+            }
+
+            int rowIdx = _toolsGrid.Rows.Add(tool.Id, tool.DisplayName, tool.Category, versionStr, statusStr);
+            if (installed != null)
+            {
+                _toolsGrid.Rows[rowIdx].DefaultCellStyle.ForeColor = installed.IsAdopted ? Color.DarkBlue : Color.DarkGreen;
+            }
+            else
+            {
+                _toolsGrid.Rows[rowIdx].DefaultCellStyle.ForeColor = Color.Gray;
+            }
+        }
+
+        if (_toolsGrid.Rows.Count > 0)
+        {
+            _toolsGrid.Rows[0].Selected = true;
+            OnToolSelected();
+        }
+    }
+
+    private void OnToolSelected()
+    {
+        if (_toolsGrid.SelectedRows.Count == 0) return;
+        string toolId = _toolsGrid.SelectedRows[0].Cells["Id"].Value?.ToString() ?? "";
+        _selectedTool = _catalogLoader.GetTool(toolId);
+        if (_selectedTool == null) return;
+
+        var installed = _toolStore.GetTool(_selectedTool.Id);
+
+        _lblToolName.Text = _selectedTool.DisplayName;
+        _lblToolCategory.Text = _selectedTool.Category;
+        _lblToolLicense.Text = _selectedTool.License;
+
+        if (installed != null)
+        {
+            _lblToolStatus.Text = installed.IsAdopted ? "Adopted (Local)" : "Installed";
+            _lblToolStatus.ForeColor = installed.IsAdopted ? Color.DarkBlue : Color.DarkGreen;
+            _lblToolInstallPath.Text = installed.InstallPath;
+            _btnUninstallTool.Enabled = true;
+        }
+        else
+        {
+            _lblToolStatus.Text = "Not Installed";
+            _lblToolStatus.ForeColor = Color.Gray;
+            _lblToolInstallPath.Text = "-";
+            _btnUninstallTool.Enabled = false;
+        }
+
+        _cboToolVersion.Items.Clear();
+        foreach (var v in _selectedTool.Versions)
+        {
+            _cboToolVersion.Items.Add(v.Version);
+        }
+        if (_cboToolVersion.Items.Count > 0)
+        {
+            _cboToolVersion.SelectedIndex = 0;
+        }
+    }
+
+    private async Task InstallSelectedToolAsync()
+    {
+        if (_selectedTool == null || _cboToolVersion.SelectedItem == null)
+        {
+            MessageBox.Show("Please select a tool and version.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        string versionStr = _cboToolVersion.SelectedItem.ToString() ?? "";
+        var ver = _selectedTool.Versions.FirstOrDefault(v => v.Version == versionStr);
+        if (ver == null) return;
+
+        var confirm = MessageBox.Show(
+            $"Install {_selectedTool.DisplayName} version {versionStr}?\n\nThis will download the package, verify checksum, extract to %LOCALAPPDATA%\\Dotnet\\tools, and configure User PATH.",
+            "Confirm Installation",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (confirm != DialogResult.Yes) return;
+
+        _btnInstallTool.Enabled = false;
+        _toolProgressBar.Value = 0;
+        _toolProgressBar.Visible = true;
+        _toolProgressLabel.Text = $"Starting download for {_selectedTool.DisplayName}...";
+
+        var progress = new Progress<double>(percent =>
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() =>
+                {
+                    _toolProgressBar.Value = Math.Min(100, Math.Max(0, (int)percent));
+                    _toolProgressLabel.Text = $"Downloading/Extracting: {(int)percent}%";
+                }));
+            }
+            else
+            {
+                _toolProgressBar.Value = Math.Min(100, Math.Max(0, (int)percent));
+                _toolProgressLabel.Text = $"Downloading/Extracting: {(int)percent}%";
+            }
+        });
+
+        bool success = await Task.Run(async () =>
+        {
+            return await ToolInstaller.InstallAsync(_selectedTool, ver, _toolStore, progress);
+        });
+
+        _btnInstallTool.Enabled = true;
+        _toolProgressBar.Visible = false;
+
+        if (success)
+        {
+            _toolProgressLabel.Text = $"Installation of {_selectedTool.DisplayName} succeeded!";
+            RefreshToolsGrid();
+            MessageBox.Show($"{_selectedTool.DisplayName} installed successfully!\nAdded to User PATH. Open a new terminal to use it.", "Installation Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        else
+        {
+            _toolProgressLabel.Text = "Installation failed. Check operational log.";
+            MessageBox.Show($"Failed to install {_selectedTool.DisplayName}. See log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void UninstallSelectedTool()
+    {
+        if (_selectedTool == null) return;
+        var installed = _toolStore.GetTool(_selectedTool.Id);
+        if (installed == null) return;
+
+        var confirm = MessageBox.Show(
+            $"Uninstall / Remove {installed.DisplayName} v{installed.Version}?\nThis will remove PATH entries and unregister the tool.",
+            "Confirm Uninstall",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+
+        if (confirm != DialogResult.Yes) return;
+
+        bool ok = ToolInstaller.UninstallAsync(installed, _toolStore);
+        if (ok)
+        {
+            RefreshToolsGrid();
+            MessageBox.Show($"{installed.DisplayName} uninstalled.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void ScanAndAdoptLocalTools()
+    {
+        var discovered = AdoptExistingScanner.ScanAll();
+        if (discovered.Count == 0)
+        {
+            MessageBox.Show("No existing local tools detected in C:\\tools, NVM, or PATH.", "Scan Results", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Discovered {discovered.Count} local tools:");
+        foreach (var d in discovered)
+        {
+            sb.AppendLine($"• {d.DisplayName} (v{d.DetectedVersion}) at {d.DirectoryPath}");
+        }
+        sb.AppendLine("\nDo you want to adopt all detected tools now?");
+
+        var res = MessageBox.Show(sb.ToString(), "Adopt Detected Local Tools", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (res == DialogResult.Yes)
+        {
+            foreach (var d in discovered)
+            {
+                AdoptExistingScanner.Adopt(d, _toolStore);
+            }
+            RefreshToolsGrid();
+            MessageBox.Show($"Adopted {discovered.Count} tools successfully! Registered in Dotnet.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void AdoptCustomLocalFolder()
+    {
+        if (_selectedTool == null) return;
+        using var fbd = new FolderBrowserDialog
+        {
+            Description = $"Select directory where {_selectedTool.DisplayName} is installed"
+        };
+        if (fbd.ShowDialog() == DialogResult.OK && Directory.Exists(fbd.SelectedPath))
+        {
+            var discovered = new DiscoveredTool
+            {
+                ToolId = _selectedTool.Id,
+                DisplayName = _selectedTool.DisplayName,
+                DetectedVersion = "Custom",
+                DirectoryPath = fbd.SelectedPath,
+                ExePath = fbd.SelectedPath
+            };
+            AdoptExistingScanner.Adopt(discovered, _toolStore);
+            RefreshToolsGrid();
+            MessageBox.Show($"Adopted {_selectedTool.DisplayName} from {fbd.SelectedPath}.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    // TAB 3: PROJECTS
     private TabPage CreateProjectsTab()
     {
         var tab = new TabPage("Projects") { BackColor = SystemColors.Control };

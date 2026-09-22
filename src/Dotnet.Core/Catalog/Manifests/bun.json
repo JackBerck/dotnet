@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "bun",
+  "displayName": "Bun (Fast All-in-One JavaScript Runtime)",
+  "category": "language",
+  "homepage": "https://bun.sh/",
+  "license": "MIT",
+  "platforms": ["win-x64"],
+  "prerequisites": [],
+  "allowedHosts": ["github.com"],
+  "versions": [
+    {
+      "version": "1.2.2",
+      "variant": "windows-x64",
+      "source": {
+        "type": "zip",
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.2.2/bun-windows-x64.zip",
+        "sha256": "4ffc9a8db6177ef4f85e3cb128e46927a7c859b9a69092497fcfa7a00f1ad9d4",
+        "stripRoot": true
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["."],
+    "envVars": {}
+  },
+  "postInstall": [],
+  "verify": {
+    "command": "bun.exe",
+    "args": ["--version"],
+    "expectRegex": "^(\\d+\\.\\d+\\.\\d+)"
+  }
+}

@@ -1,7 +1,7 @@
 # PROGRESS TRACKING — Dotnet (Standalone Dev Manager)
 
 > Sinkronisasi otomatis dengan [`PROJECT-SPEC.md`](PROJECT-SPEC.md).
-> Terakhir diperbarui: **2026-09-22** (Pasca Update 2).
+> Terakhir diperbarui: **2026-09-22** (Pasca Update 3 / Fase 2 MVP).
 
 ---
 
@@ -11,7 +11,7 @@
 |---|---|---|---|
 | **Fase 0** | Fondasi Repo & Arsitektur Solusi | 🟡 Sedang Berjalan | 85% |
 | **Fase 1** | Stabilkan Inti (P0 & Fondasi Keamanan) | 🟡 Sedang Berjalan | 75% |
-| **Fase 2** | Catalog & Installer Tool (Node, PHP, MinGit, Nginx, Composer) | ⚪ Belum Dimulai | 0% |
+| **Fase 2** | Catalog & Installer Tool (Node, PHP, MinGit, Nginx, Composer, Bun, Go) | 🟢 **MVP Selesai** | 90% |
 | **Fase 3** | Runtime Terintegrasi, Tray & Profile | ⚪ Belum Dimulai | 0% |
 | **Fase 4** | Konfigurasi & Project Manager v2 | ⚪ Belum Dimulai | 0% |
 | **Fase 5** | Database Portable & Perluasan (Docker v2) | ⚪ Belum Dimulai | 0% |
@@ -29,14 +29,14 @@
 | **F-02** | `ProcessServiceManager.StopProcess` bunuh proses asing di port | ✅ **SELESAI** | Verifikasi kepemilikan proses sebelum stop; cegah blind force-kill (Update 1). |
 | **F-03** | Port terpakai proses lain dianggap `Running` | ✅ **SELESAI** | Deteksi port conflict spesifik proses eksternal (Update 1). |
 | **F-04** | Redirect stdout/stderr pipe buffer deadlock | ✅ **SELESAI** | Redirect ke file log & pembacaan stream async (Update 1 & 2). |
-| **F-05** | Path hardcoded `C:\tools\...` | 🟡 **PARSIAL** | Configurable path di `PhpConfigManager` & `NginxManager`; katalog dinamis di Fase 2. |
+| **F-05** | Path hardcoded `C:\tools\...` | ✅ **SELESAI** | `InstalledToolStore` & `ToolInstaller` kelola instalasi dinamis; `AdoptExistingScanner` adopsi instalasi lokal (Update 3). |
 | **F-06** | Tulis data ke folder exe (`BaseDirectory`) | ✅ **SELESAI** | Pindah ke `%LOCALAPPDATA%\Dotnet\` via `AppPaths.cs` (Update 1). |
 | **F-07** | `PhpConfigManager` regex rapuh & sentinel string `"Not Set"` | ✅ **SELESAI** | `IniDocument` parser murni, preservasi komentar/section, tanpa sentinel string (Update 2). |
 | **F-08** | Edit `hosts` tanpa managed block & non-atomik | ✅ **SELESAI** | Managed Block `# >>> Dotnet (managed) >>>`, isolasi baris sistem, tulis atomik (Update 2). |
 | **F-09** | Crash autostart di konstruktor Form | ✅ **SELESAI** | Pindah eksekusi autostart ke event `Shown` (Update 1). |
 | **F-10** | `StartupManager` vs UAC Run key logon | ⚪ **PENDING** | Keputusan model elevasi di Fase 1 akhir / Fase 3. |
 
-### Prioritas P1 & P2 (Relevan Update 1 & 2)
+### Prioritas P1 & P2 (Relevan)
 
 | ID | Deskripsi | Status | Implementasi |
 |---|---|---|---|
@@ -45,7 +45,7 @@
 | **F-16** | `NginxManager` deadlock stdout/stderr & tanpa stop graceful | ✅ **SELESAI** | Async stream timeout, exit code check, `-s quit`, tail error log (Update 2). |
 | **F-25** | Git hygiene: untrack `bin/`, `obj/`, `.user` | ✅ **SELESAI** | `.gitignore` dikonfigurasi & repo dibersihkan (Update 1). |
 | **F-29** | JSON settings ditulis non-atomik & tanpa versi skema | ✅ **SELESAI** | `JsonStore.cs` atomik (`.tmp` -> replace) + `schemaVersion` (Update 2). |
-| **STYLE**| Penyesuaian tema visual legacy Windows 7/XP | ✅ **SELESAI** | UI direstyle ke `SystemColors.Control` & `STYLE-SPEC.md` (Update 2). |
+| **STYLE**| Penyesuaian tema visual legacy Windows 7/XP | ✅ **SELESAI** | Seluruh tab (termasuk Tools & Catalog) mengikuti `STYLE-SPEC.md` (Update 2 & 3). |
 
 ---
 
@@ -70,19 +70,20 @@
 - [x] **T1-8:** Lifecycle UI autostart pasca `Shown` & classic WinForms style (F-09, STYLE-SPEC).
 - [ ] **T1-9:** Penentuan model elevasi & Task Scheduler autostart (F-10).
 
-### Fase 2 — Catalog & Tool Installer (Target Berikutnya)
-- [ ] **T2-1:** Skema manifest tool (JSON) + validator.
-- [ ] **T2-2:** Downloader (resume/retry), SHA256 checksum verifier, safe zip extractor.
-- [ ] **T2-3:** `InstalledToolStore` + scanner instalasi lokal (`C:\tools\*`, nvm-windows).
-- [ ] **T2-4:** `PathEditor` (User PATH, broadcast WM_SETTINGCHANGE).
-- [ ] **T2-5:** Post-install steps (`copyIfMissing`, `iniSet`, `writeShim`).
-- [ ] **T2-6:** Tab UI **Tools** (Catalog list, Install, Uninstall, Version switch).
-- [ ] **T2-7:** Manifest awal: Node, PHP, Composer, Git (MinGit), Nginx, Bun, Go.
-- [ ] **T2-8:** Skrip sinkronisasi catalog dari upstream resmi.
+### Fase 2 — Catalog & Tool Installer (MVP Selesai)
+- [x] **T2-1:** Skema manifest tool (JSON) + model deklaratif `ToolDefinition`.
+- [x] **T2-2:** `ToolDownloader` (HTTPS, SHA256 stream) + `SafeExtractor` (anti zip-slip/bomb, `stripRoot`).
+- [x] **T2-3:** `InstalledToolStore` (`installed-tools.json`) + `AdoptExistingScanner` (`C:\tools\*`, NVM, PATH).
+- [x] **T2-4:** `PathEditor` (murni, teruji) + `EnvironmentService` (HKCU `REG_EXPAND_SZ`, backup, broadcast `WM_SETTINGCHANGE`).
+- [x] **T2-5:** `PostInstallRunner` (`copyIfMissing`, `iniSet`, `iniEnableExtensions`, `writeShim`) + `JunctionManager` (`current` junction).
+- [x] **T2-6:** Tab UI **Tools & Packages** di Form1 (Catalog list, Install, Uninstall, Adopt, Version switch, progress).
+- [x] **T2-7:** Manifest awal: Node.js, PHP, Composer, Git (MinGit), Nginx, Bun, Go ter-embed di assembly.
+- [ ] **T2-8:** Skrip sinkronisasi catalog dari upstream resmi (GitHub Actions / scheduled CI).
 
 ---
 
 ## Log Riwayat Update
 
 - **Update 1 (`90ac4fa`):** Split solution (`Core` & `App`), P/Invoke port checking, process output logging, storage migration `%LOCALAPPDATA%`, autostart crash fix.
-- **Update 2 (Current):** `IniDocument` parser murni, Hosts Managed Block marker, status service akurat (`NotInstalled`), `JsonStore` atomik + `schemaVersion`, Safe async Nginx, restyle UI classic Win7/XP (`STYLE-SPEC.md`), setup project `Dotnet.Core.Tests` (12 passing tests).
+- **Update 2 (`055af5c`):** `IniDocument` parser murni, Hosts Managed Block marker, status service akurat (`NotInstalled`), `JsonStore` atomik + `schemaVersion`, Safe async Nginx, restyle UI classic Win7/XP (`STYLE-SPEC.md`), setup project `Dotnet.Core.Tests` (12 passing tests).
+- **Update 3 (Current - Fase 2):** Tool Catalog & Installer MVP. Manifest deklaratif ter-embed (PHP, Node, Composer, Git, Nginx, Bun, Go), `SafeExtractor` (anti zip-slip/bomb), `ToolDownloader` (SHA-256), `EnvironmentService` (User PATH `REG_EXPAND_SZ` + `WM_SETTINGCHANGE`), `InstalledToolStore`, `AdoptExistingScanner`, `JunctionManager`, tab WinForms "Tools & Packages" classic style, 20 unit tests lolos.

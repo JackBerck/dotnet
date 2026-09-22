@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "nginx",
+  "displayName": "Nginx Web Server",
+  "category": "web-server",
+  "homepage": "https://nginx.org/",
+  "license": "2-clause-BSD",
+  "platforms": ["win-x64"],
+  "prerequisites": [],
+  "allowedHosts": ["nginx.org"],
+  "versions": [
+    {
+      "version": "1.26.3",
+      "variant": "win",
+      "source": {
+        "type": "zip",
+        "url": "https://nginx.org/download/nginx-1.26.3.zip",
+        "sha256": "4bcfefbb59d332aa6c38260b0fc3aa8cce06c9e099ff866085a805f1dfdbd65e",
+        "stripRoot": true
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["."],
+    "envVars": {}
+  },
+  "postInstall": [],
+  "verify": {
+    "command": "nginx.exe",
+    "args": ["-v"],
+    "expectRegex": "nginx version"
+  }
+}

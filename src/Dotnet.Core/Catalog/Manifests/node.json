@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "node",
+  "displayName": "Node.js & npm",
+  "category": "language",
+  "homepage": "https://nodejs.org/",
+  "license": "MIT",
+  "platforms": ["win-x64"],
+  "prerequisites": [],
+  "allowedHosts": ["nodejs.org"],
+  "versions": [
+    {
+      "version": "22.14.0",
+      "variant": "win-x64",
+      "source": {
+        "type": "zip",
+        "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip",
+        "sha256": "f51a44e5904ef23a07675f2ee1df149b1ff5bc39ca0f9b6eef760c4aa30560b4",
+        "stripRoot": true
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["."],
+    "envVars": {}
+  },
+  "postInstall": [],
+  "verify": {
+    "command": "node.exe",
+    "args": ["-v"],
+    "expectRegex": "^v(\\d+\\.\\d+\\.\\d+)"
+  }
+}
