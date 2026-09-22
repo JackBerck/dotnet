@@ -21,35 +21,16 @@ public class ServiceSettingsManager
 
     public static void Load()
     {
-        try
+        var doc = dotnet.Persistence.JsonStore.Load<List<ServiceSettings>>(FilePath);
+        if (doc?.Data != null)
         {
-            if (File.Exists(FilePath))
-            {
-                string json = File.ReadAllText(FilePath);
-                var list = JsonSerializer.Deserialize<List<ServiceSettings>>(json);
-                if (list != null)
-                {
-                    _settings = list.ToDictionary(s => s.ServiceId, s => s);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log($"Error loading service settings: {ex.Message}");
+            _settings = doc.Data.ToDictionary(s => s.ServiceId, s => s);
         }
     }
 
     public static void Save()
     {
-        try
-        {
-            string json = JsonSerializer.Serialize(_settings.Values.ToList(), new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(FilePath, json);
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log($"Error saving service settings: {ex.Message}");
-        }
+        dotnet.Persistence.JsonStore.Save(FilePath, _settings.Values.ToList(), schemaVersion: 1);
     }
 
     public static bool GetAutoStartOnBoot(string serviceId, bool defaultValue = true)

@@ -8,4 +8,5 @@ public class HostEntryInfo
     public bool IsEnabled { get; set; } = true;
     public int LineNumber { get; set; }
     public string RawLine { get; set; } = string.Empty;
+    public bool IsManaged { get; set; } = false;
 }

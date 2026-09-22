@@ -3,4 +3,7 @@
     <Project Path="src/Dotnet.App/Dotnet.App.csproj" />
     <Project Path="src/Dotnet.Core/Dotnet.Core.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Dotnet.Core.Tests/Dotnet.Core.Tests.csproj" />
+  </Folder>
 </Solution>

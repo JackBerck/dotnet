@@ -18,32 +18,13 @@ public class ProjectManager
 
     public static void LoadProjects()
     {
-        try
-        {
-            if (File.Exists(ProjectsFilePath))
-            {
-                string json = File.ReadAllText(ProjectsFilePath);
-                Projects = JsonSerializer.Deserialize<List<ProjectInfo>>(json) ?? new List<ProjectInfo>();
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log($"Error loading projects file: {ex.Message}");
-            Projects = new List<ProjectInfo>();
-        }
+        var doc = dotnet.Persistence.JsonStore.Load<List<ProjectInfo>>(ProjectsFilePath);
+        Projects = doc?.Data ?? new List<ProjectInfo>();
     }
 
     public static void SaveProjects()
     {
-        try
-        {
-            string json = JsonSerializer.Serialize(Projects, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ProjectsFilePath, json);
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log($"Error saving projects file: {ex.Message}");
-        }
+        dotnet.Persistence.JsonStore.Save(ProjectsFilePath, Projects, schemaVersion: 1);
     }
 
     public static void AddOrUpdateProject(ProjectInfo project)
