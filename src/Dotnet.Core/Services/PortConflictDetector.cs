@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using dotnet.Models;
 
 namespace dotnet.Services;
 
@@ -12,6 +13,15 @@ public class PortConflictInfo
     public bool IsInUse { get; set; }
     public int ProcessId { get; set; }
     public string ProcessName { get; set; } = string.Empty;
+}
+
+public class ActivePortEntry
+{
+    public int Port { get; set; }
+    public int ProcessId { get; set; }
+    public string ProcessName { get; set; } = string.Empty;
+    public string ServiceName { get; set; } = string.Empty;
+    public bool IsDotnetManaged { get; set; }
 }
 
 public class PortConflictDetector
@@ -86,6 +96,78 @@ public class PortConflictDetector
         }
 
         return null;
+    }
+
+    public static List<ActivePortEntry> GetAllActiveTcpListeners(IEnumerable<DevServiceInfo>? managedServices = null)
+    {
+        var list = new List<ActivePortEntry>();
+        int buffSize = 0;
+        uint ret = GetExtendedTcpTable(IntPtr.Zero, ref buffSize, true, 2 /* AF_INET */, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_LISTENER, 0);
+
+        if (ret != 0 && ret != 122)
+        {
+            return list;
+        }
+
+        IntPtr buffTable = Marshal.AllocHGlobal(buffSize);
+        try
+        {
+            ret = GetExtendedTcpTable(buffTable, ref buffSize, true, 2, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_LISTENER, 0);
+            if (ret != 0)
+            {
+                return list;
+            }
+
+            int numEntries = Marshal.ReadInt32(buffTable);
+            IntPtr rowPtr = new IntPtr(buffTable.ToInt64() + 4);
+
+            var managedDict = managedServices?.ToDictionary(s => s.Port, s => s) ?? new Dictionary<int, DevServiceInfo>();
+            var procCache = new Dictionary<int, string>();
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                var row = Marshal.PtrToStructure<MIB_TCPROW_OWNER_PID>(rowPtr);
+                ushort rowPort = (ushort)((row.localPort[0] << 8) | row.localPort[1]);
+                int pid = (int)row.owningPid;
+
+                if (!procCache.TryGetValue(pid, out var procName))
+                {
+                    try
+                    {
+                        using var proc = Process.GetProcessById(pid);
+                        procName = proc.ProcessName;
+                    }
+                    catch
+                    {
+                        procName = pid == 4 ? "System" : $"PID {pid}";
+                    }
+                    procCache[pid] = procName;
+                }
+
+                bool isManaged = managedDict.TryGetValue(rowPort, out var svc) && (svc.ProcessId == pid || svc.Status == ServiceStatus.Running);
+                string serviceName = isManaged && svc != null ? svc.Name : string.Empty;
+
+                if (!list.Any(e => e.Port == rowPort && e.ProcessId == pid))
+                {
+                    list.Add(new ActivePortEntry
+                    {
+                        Port = rowPort,
+                        ProcessId = pid,
+                        ProcessName = procName,
+                        ServiceName = serviceName,
+                        IsDotnetManaged = isManaged
+                    });
+                }
+
+                rowPtr = new IntPtr(rowPtr.ToInt64() + Marshal.SizeOf(typeof(MIB_TCPROW_OWNER_PID)));
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffTable);
+        }
+
+        return list.OrderBy(e => e.Port).ToList();
     }
 
     public static PortConflictInfo CheckPort(int port)

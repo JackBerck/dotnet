@@ -6,35 +6,62 @@ namespace dotnet.Services;
 public class ProcessServiceManager
 {
     private static readonly Dictionary<string, Process> ManagedProcesses = new();
+    private static readonly HashSet<string> IntentionallyStopping = new();
+    private static readonly object SyncLock = new();
+
+    public static void TryAdoptAll(IEnumerable<DevServiceInfo> services)
+    {
+        foreach (var svc in services)
+        {
+            if (svc.Type == DevServiceType.ManagedProcess)
+            {
+                GetStatus(svc);
+            }
+        }
+    }
 
     public static ServiceStatus GetStatus(DevServiceInfo service)
     {
-        if (ManagedProcesses.TryGetValue(service.Id, out var proc))
+        lock (SyncLock)
         {
-            if (!proc.HasExited)
+            if (ManagedProcesses.TryGetValue(service.Id, out var proc))
             {
-                service.ProcessId = proc.Id;
+                if (!proc.HasExited)
+                {
+                    service.ProcessId = proc.Id;
+                    return ServiceStatus.Running;
+                }
+                else
+                {
+                    ManagedProcesses.Remove(service.Id);
+                    ProcessTracker.RemoveProcess(service.Id);
+                    service.ProcessId = null;
+                }
+            }
+
+            // Attempt to re-adopt previously running process persisted in state
+            var adopted = ProcessTracker.TryAdoptProcess(service.Id, service.ExecutablePath);
+            if (adopted != null)
+            {
+                HookExitedEvent(service, adopted);
+                ManagedProcesses[service.Id] = adopted;
+                service.ProcessId = adopted.Id;
                 return ServiceStatus.Running;
             }
-            else
-            {
-                ManagedProcesses.Remove(service.Id);
-                service.ProcessId = null;
-            }
-        }
 
-        if (service.Port > 0)
-        {
-            int? pid = PortConflictDetector.GetProcessIdByPort(service.Port);
-            if (pid.HasValue)
+            if (service.Port > 0)
             {
-                service.ProcessId = pid.Value;
-                return ServiceStatus.PortConflict;
+                int? pid = PortConflictDetector.GetProcessIdByPort(service.Port);
+                if (pid.HasValue)
+                {
+                    service.ProcessId = pid.Value;
+                    return ServiceStatus.PortConflict;
+                }
             }
-        }
 
-        service.ProcessId = null;
-        return ServiceStatus.Stopped;
+            service.ProcessId = null;
+            return ServiceStatus.Stopped;
+        }
     }
 
     public static bool StartProcess(DevServiceInfo service)
@@ -51,8 +78,8 @@ public class ProcessServiceManager
             {
                 FileName = service.ExecutablePath,
                 Arguments = service.Arguments,
-                WorkingDirectory = string.IsNullOrEmpty(service.WorkingDirectory) 
-                    ? Path.GetDirectoryName(service.ExecutablePath) ?? "" 
+                WorkingDirectory = string.IsNullOrEmpty(service.WorkingDirectory)
+                    ? Path.GetDirectoryName(service.ExecutablePath) ?? ""
                     : service.WorkingDirectory,
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -62,14 +89,14 @@ public class ProcessServiceManager
 
             var proc = new Process { StartInfo = startInfo };
             proc.EnableRaisingEvents = true;
-            
+
             proc.OutputDataReceived += (s, e) => {
                 if (!string.IsNullOrEmpty(e.Data))
                 {
                     // Drain stdout to prevent hang
                 }
             };
-            
+
             proc.ErrorDataReceived += (s, e) => {
                 if (!string.IsNullOrEmpty(e.Data))
                 {
@@ -77,20 +104,23 @@ public class ProcessServiceManager
                 }
             };
 
-            proc.Exited += (s, e) =>
-            {
-                AppLogger.Log($"Process {service.Name} (PID {proc.Id}) exited.");
-                ManagedProcesses.Remove(service.Id);
-            };
+            HookExitedEvent(service, proc);
 
             if (proc.Start())
             {
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
-                
-                ManagedProcesses[service.Id] = proc;
+
+                lock (SyncLock)
+                {
+                    ManagedProcesses[service.Id] = proc;
+                    IntentionallyStopping.Remove(service.Id);
+                }
+
                 service.ProcessId = proc.Id;
                 service.Status = ServiceStatus.Running;
+                ProcessTracker.RecordProcess(service.Id, proc.Id, service.ExecutablePath);
+
                 AppLogger.Log($"Started {service.Name} (PID: {proc.Id}) on port {service.Port}");
                 return true;
             }
@@ -107,14 +137,25 @@ public class ProcessServiceManager
     {
         try
         {
-            if (ManagedProcesses.TryGetValue(service.Id, out var proc))
+            Process? proc = null;
+            lock (SyncLock)
+            {
+                IntentionallyStopping.Add(service.Id);
+                if (ManagedProcesses.TryGetValue(service.Id, out proc))
+                {
+                    ManagedProcesses.Remove(service.Id);
+                }
+            }
+
+            ProcessTracker.RemoveProcess(service.Id);
+
+            if (proc != null)
             {
                 if (!proc.HasExited)
                 {
                     proc.Kill(true);
                     proc.WaitForExit(3000);
                 }
-                ManagedProcesses.Remove(service.Id);
                 service.ProcessId = null;
                 service.Status = ServiceStatus.Stopped;
                 AppLogger.Log($"Stopped process {service.Name}");
@@ -134,7 +175,55 @@ public class ProcessServiceManager
         {
             AppLogger.Log($"Error stopping process {service.Name}: {ex.Message}");
         }
+        finally
+        {
+            lock (SyncLock)
+            {
+                IntentionallyStopping.Remove(service.Id);
+            }
+        }
 
         return false;
+    }
+
+    private static void HookExitedEvent(DevServiceInfo service, Process proc)
+    {
+        try
+        {
+            proc.EnableRaisingEvents = true;
+            proc.Exited += (s, e) =>
+            {
+                bool intentional = false;
+                int exitCode = 0;
+                try
+                {
+                    exitCode = proc.ExitCode;
+                }
+                catch { }
+
+                lock (SyncLock)
+                {
+                    intentional = IntentionallyStopping.Contains(service.Id);
+                    ManagedProcesses.Remove(service.Id);
+                }
+
+                ProcessTracker.RemoveProcess(service.Id);
+                service.ProcessId = null;
+                service.Status = ServiceStatus.Stopped;
+
+                if (!intentional)
+                {
+                    ProcessTracker.NotifyCrash(service.Id, exitCode);
+                }
+                else
+                {
+                    AppLogger.Log($"Process {service.Name} (PID {proc.Id}) exited cleanly.");
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log($"Warning: Could not hook Exited event on {service.Name}: {ex.Message}");
+        }
     }
 }

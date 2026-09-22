@@ -42,6 +42,9 @@ public partial class Form1 : Form
     private TextBox _phpPostMax = null!;
     private TextBox _phpMaxExec = null!;
     private Label _adminStatusLabel = null!;
+    private ComboBox _cboProfile = null!;
+    private DataGridView _gridActivePorts = null!;
+    private DataGridView _gridShadow = null!;
     private NotifyIcon _notifyIcon = null!;
     private ContextMenuStrip _trayMenu = null!;
     private CheckBox _chkAutoStart = null!;
@@ -55,6 +58,8 @@ public partial class Form1 : Form
         _toolStore.Load();
         InitializeComponent();
         SetupServicesList();
+        ProcessServiceManager.TryAdoptAll(_services);
+        ProcessTracker.ProcessCrashed += OnProcessCrashed;
         BuildCustomUi();
         SetupSystemTray();
         AppLogger.OnLog += AppendLog;
@@ -72,6 +77,21 @@ public partial class Form1 : Form
             this.ShowInTaskbar = false;
             this.Hide();
         }
+    }
+
+    private void OnProcessCrashed(string serviceId, int exitCode)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(new Action<string, int>(OnProcessCrashed), serviceId, exitCode);
+            return;
+        }
+
+        var svc = _services.FirstOrDefault(s => s.Id.Equals(serviceId, StringComparison.OrdinalIgnoreCase));
+        string name = svc?.Name ?? serviceId;
+        AppLogger.Log($"[ALERT] Service '{name}' exited unexpectedly with code {exitCode}!");
+        _notifyIcon.ShowBalloonTip(3000, "Layanan Berhenti / Crash", $"Layanan '{name}' berhenti tidak terduga (Kode: {exitCode})", ToolTipIcon.Warning);
+        RefreshServicesStatus();
     }
 
     private async Task AutoStartBootServices()
@@ -185,8 +205,41 @@ public partial class Form1 : Form
             Text = isAdmin ? "[ Administrator ]" : "[ Standard User ]",
             ForeColor = isAdmin ? Color.DarkGreen : Color.DarkRed,
             AutoSize = true,
-            Location = new Point(340, 18),
+            Location = new Point(315, 18),
             Font = new Font("Tahoma", 8.25F, FontStyle.Bold)
+        };
+
+        var lblProfile = new Label
+        {
+            Text = "Profile:",
+            AutoSize = true,
+            Location = new Point(445, 18),
+            Font = new Font("Tahoma", 8.25F, FontStyle.Bold)
+        };
+
+        _cboProfile = new ComboBox
+        {
+            Location = new Point(495, 15),
+            Width = 145,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            FlatStyle = FlatStyle.Standard
+        };
+        foreach (var prof in ProfileStore.Profiles)
+        {
+            _cboProfile.Items.Add(prof.Name);
+        }
+        var activeProf = ProfileStore.GetActiveProfile();
+        _cboProfile.SelectedItem = activeProf.Name;
+        _cboProfile.SelectedIndexChanged += (s, e) =>
+        {
+            var selected = ProfileStore.Profiles.FirstOrDefault(p => p.Name == _cboProfile.SelectedItem?.ToString());
+            if (selected != null && selected.Id != ProfileStore.ActiveProfileId)
+            {
+                ProfileStore.ActiveProfileId = selected.Id;
+                AppLogger.Log($"Switched active service profile to: {selected.Name}");
+                RefreshServicesStatus();
+                UpdateTrayMenu();
+            }
         };
 
         _chkAutoStart = new CheckBox
@@ -194,7 +247,7 @@ public partial class Form1 : Form
             Text = "Run on Boot",
             ForeColor = SystemColors.ControlText,
             AutoSize = true,
-            Location = new Point(480, 18),
+            Location = new Point(650, 18),
             Checked = StartupManager.IsRunOnStartupEnabled(),
             Cursor = Cursors.Hand
         };
@@ -207,8 +260,8 @@ public partial class Form1 : Form
         {
             Text = "▶ Start All",
             FlatStyle = FlatStyle.Standard,
-            Size = new Size(90, 28),
-            Location = new Point(620, 13),
+            Size = new Size(80, 28),
+            Location = new Point(755, 13),
             Cursor = Cursors.Hand
         };
         btnStartAll.Click += async (s, e) => await StartAllGroupServices();
@@ -217,8 +270,8 @@ public partial class Form1 : Form
         {
             Text = "⏹ Stop All",
             FlatStyle = FlatStyle.Standard,
-            Size = new Size(90, 28),
-            Location = new Point(720, 13),
+            Size = new Size(80, 28),
+            Location = new Point(840, 13),
             Cursor = Cursors.Hand
         };
         btnStopAll.Click += async (s, e) => await StopAllGroupServices();
@@ -227,14 +280,16 @@ public partial class Form1 : Form
         {
             Text = "🔄 Refresh",
             FlatStyle = FlatStyle.Standard,
-            Size = new Size(85, 28),
-            Location = new Point(820, 13),
+            Size = new Size(80, 28),
+            Location = new Point(925, 13),
             Cursor = Cursors.Hand
         };
         btnRefresh.Click += (s, e) => RefreshServicesStatus();
 
         headerPanel.Controls.Add(titleLabel);
         headerPanel.Controls.Add(_adminStatusLabel);
+        headerPanel.Controls.Add(lblProfile);
+        headerPanel.Controls.Add(_cboProfile);
         headerPanel.Controls.Add(_chkAutoStart);
         headerPanel.Controls.Add(btnStartAll);
         headerPanel.Controls.Add(btnStopAll);
@@ -346,6 +401,8 @@ public partial class Form1 : Form
             var card = CreateServiceCard(svc);
             _servicesPanel.Controls.Add(card);
         }
+
+        UpdateTrayMenu();
     }
 
     private Panel CreateServiceCard(DevServiceInfo svc)
@@ -403,7 +460,7 @@ public partial class Form1 : Form
             Text = statusText,
             ForeColor = statusColor,
             Font = new Font("Tahoma", 8.5F, FontStyle.Bold),
-            Location = new Point(370, 19),
+            Location = new Point(340, 19),
             AutoSize = true
         };
 
@@ -411,7 +468,18 @@ public partial class Form1 : Form
         {
             Text = svc.ProcessId.HasValue ? $"PID: {svc.ProcessId}" : "",
             ForeColor = SystemColors.ControlDarkDark,
-            Location = new Point(510, 20),
+            Location = new Point(470, 20),
+            AutoSize = true
+        };
+
+        var activeProfile = ProfileStore.GetActiveProfile();
+        bool isProfileTarget = activeProfile.ServiceIds.Contains(svc.Id, StringComparer.OrdinalIgnoreCase);
+        var lblProfileTag = new Label
+        {
+            Text = isProfileTarget ? "[Target]" : "[Optional]",
+            ForeColor = isProfileTarget ? Color.Navy : Color.Gray,
+            Font = new Font("Tahoma", 7.5F, FontStyle.Regular),
+            Location = new Point(555, 21),
             AutoSize = true
         };
 
@@ -421,7 +489,7 @@ public partial class Form1 : Form
             Checked = svc.AutoStartOnBoot,
             ForeColor = SystemColors.ControlText,
             Font = new Font("Tahoma", 8.25F),
-            Location = new Point(620, 19),
+            Location = new Point(640, 19),
             AutoSize = true,
             Cursor = Cursors.Hand
         };
@@ -486,6 +554,7 @@ public partial class Form1 : Form
         card.Controls.Add(lblPort);
         card.Controls.Add(lblStatus);
         card.Controls.Add(lblPid);
+        card.Controls.Add(lblProfileTag);
         card.Controls.Add(chkAutoBoot);
         card.Controls.Add(btnToggle);
         card.Controls.Add(btnRestart);
@@ -520,7 +589,7 @@ public partial class Form1 : Form
         }
     }
 
-    private async Task StartSingleService(DevServiceInfo svc)
+    private async Task<bool> StartSingleService(DevServiceInfo svc)
     {
         var conflict = PortConflictDetector.CheckPort(svc.Port);
         if (conflict.IsInUse)
@@ -543,7 +612,7 @@ public partial class Form1 : Form
             if (isOwnProcess)
             {
                 AppLogger.Log($"{svc.Name} is already active on port {svc.Port} (PID {conflict.ProcessId}).");
-                return;
+                return true;
             }
 
             MessageBox.Show(
@@ -552,7 +621,7 @@ public partial class Form1 : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning
             );
-            return;
+            return false;
         }
 
         if (svc.Type == DevServiceType.WindowsService)
@@ -561,15 +630,17 @@ public partial class Form1 : Form
             if (!res.Success)
             {
                 MessageBox.Show(res.Message, "Service Start Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
+            return true;
         }
         else
         {
-            ProcessServiceManager.StartProcess(svc);
+            return ProcessServiceManager.StartProcess(svc);
         }
     }
 
-    private async Task StopSingleService(DevServiceInfo svc)
+    private async Task<bool> StopSingleService(DevServiceInfo svc)
     {
         if (svc.Type == DevServiceType.WindowsService)
         {
@@ -577,34 +648,29 @@ public partial class Form1 : Form
             if (!res.Success)
             {
                 MessageBox.Show(res.Message, "Service Stop Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
+            return true;
         }
         else
         {
-            ProcessServiceManager.StopProcess(svc);
+            return ProcessServiceManager.StopProcess(svc);
         }
     }
 
     private async Task StartAllGroupServices()
     {
-        AppLogger.Log("Executing Start All Services...");
-        foreach (var svc in _services)
-        {
-            if (svc.AutoStartWithGroup)
-            {
-                await StartSingleService(svc);
-            }
-        }
+        var profile = ProfileStore.GetActiveProfile();
+        AppLogger.Log($"Executing Start All Services for profile '{profile.Name}'...");
+        await ServiceOrchestrator.StartProfileServicesAsync(_services, profile, StartSingleService);
         RefreshServicesStatus();
     }
 
     private async Task StopAllGroupServices()
     {
-        AppLogger.Log("Executing Stop All Services...");
-        foreach (var svc in _services)
-        {
-            await StopSingleService(svc);
-        }
+        var profile = ProfileStore.GetActiveProfile();
+        AppLogger.Log($"Executing Stop All Services for profile '{profile.Name}'...");
+        await ServiceOrchestrator.StopProfileServicesAsync(_services, profile, StopSingleService);
         RefreshServicesStatus();
     }
 
@@ -1426,10 +1492,10 @@ public partial class Form1 : Form
         MessageBox.Show("php.ini settings saved with backup!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
-    // TAB 5: DIAGNOSTICS & DOCKER CHECK
+    // TAB 6: DIAGNOSTICS & SYSTEM AUDIT
     private TabPage CreateDiagnosticsTab()
     {
-        var tab = new TabPage("Port & Docker Pre-Flight") { BackColor = SystemColors.Control };
+        var tab = new TabPage("Diagnostics & Port Monitor") { BackColor = SystemColors.Control, AutoScroll = true };
 
         var gbPort = new GroupBox
         {
@@ -1548,8 +1614,143 @@ public partial class Form1 : Form
         gbDocker.Controls.Add(lblDockerPath); gbDocker.Controls.Add(txtDockerPath); gbDocker.Controls.Add(btnBrowseDocker);
         gbDocker.Controls.Add(btnRunDockerCheck); gbDocker.Controls.Add(txtDockerResult);
 
+        // Active TCP Ports Monitor
+        var gbActivePorts = new GroupBox
+        {
+            Text = "Active TCP Listeners Monitor (Real-time Port Snapshot)",
+            Size = new Size(1015, 230),
+            Location = new Point(15, 305),
+            ForeColor = SystemColors.ControlText
+        };
+
+        var btnRefreshPorts = new Button
+        {
+            Text = "🔄 Refresh Active Ports",
+            Location = new Point(15, 22),
+            Size = new Size(160, 26),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+
+        _gridActivePorts = new DataGridView
+        {
+            Location = new Point(15, 54),
+            Size = new Size(985, 160),
+            BackgroundColor = SystemColors.Window,
+            BorderStyle = BorderStyle.Fixed3D,
+            ReadOnly = true,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+        };
+
+        _gridActivePorts.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Port", Width = 70, FillWeight = 10 });
+        _gridActivePorts.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "PID", Width = 70, FillWeight = 10 });
+        _gridActivePorts.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Process Name", Width = 150, FillWeight = 25 });
+        _gridActivePorts.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Managed Service", Width = 180, FillWeight = 30 });
+        _gridActivePorts.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Type", Width = 100, FillWeight = 15 });
+
+        void PopulateActivePorts()
+        {
+            _gridActivePorts.Rows.Clear();
+            var listeners = PortConflictDetector.GetAllActiveTcpListeners(_services);
+            foreach (var l in listeners)
+            {
+                int rowIndex = _gridActivePorts.Rows.Add(
+                    l.Port,
+                    l.ProcessId,
+                    l.ProcessName,
+                    string.IsNullOrEmpty(l.ServiceName) ? "-" : l.ServiceName,
+                    l.IsDotnetManaged ? "Managed" : "External"
+                );
+                if (l.IsDotnetManaged)
+                {
+                    _gridActivePorts.Rows[rowIndex].DefaultCellStyle.ForeColor = Color.DarkGreen;
+                }
+            }
+        }
+
+        btnRefreshPorts.Click += (s, e) => PopulateActivePorts();
+        gbActivePorts.Controls.Add(btnRefreshPorts);
+        gbActivePorts.Controls.Add(_gridActivePorts);
+
+        // PATH Shadow Analyzer
+        var gbShadow = new GroupBox
+        {
+            Text = "PATH Shadow Analyzer (User PATH vs System PATH Precedence Check)",
+            Size = new Size(1015, 230),
+            Location = new Point(15, 545),
+            ForeColor = SystemColors.ControlText
+        };
+
+        var btnAnalyzeShadow = new Button
+        {
+            Text = "🔍 Analyze PATH Shadowing",
+            Location = new Point(15, 22),
+            Size = new Size(180, 26),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+
+        _gridShadow = new DataGridView
+        {
+            Location = new Point(15, 54),
+            Size = new Size(985, 160),
+            BackgroundColor = SystemColors.Window,
+            BorderStyle = BorderStyle.Fixed3D,
+            ReadOnly = true,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+        };
+
+        _gridShadow.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Binary", Width = 90, FillWeight = 12 });
+        _gridShadow.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", Width = 90, FillWeight = 12 });
+        _gridShadow.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Managed User Path", Width = 220, FillWeight = 28 });
+        _gridShadow.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "System Path Location", Width = 220, FillWeight = 28 });
+        _gridShadow.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Recommendation", Width = 200, FillWeight = 20 });
+
+        void RunShadowAnalysis()
+        {
+            _gridShadow.Rows.Clear();
+            var results = PathShadowAnalyzer.Analyze();
+            foreach (var r in results)
+            {
+                int rowIndex = _gridShadow.Rows.Add(
+                    r.BinaryName,
+                    r.IsShadowed ? "⚠️ SHADOWED" : "✅ OK",
+                    r.UserPathLocation,
+                    r.SystemPathLocation,
+                    r.Recommendation
+                );
+                if (r.IsShadowed)
+                {
+                    _gridShadow.Rows[rowIndex].DefaultCellStyle.ForeColor = Color.DarkRed;
+                    _gridShadow.Rows[rowIndex].DefaultCellStyle.BackColor = Color.FromArgb(255, 240, 240);
+                }
+                else
+                {
+                    _gridShadow.Rows[rowIndex].DefaultCellStyle.ForeColor = Color.DarkGreen;
+                }
+            }
+        }
+
+        btnAnalyzeShadow.Click += (s, e) => RunShadowAnalysis();
+        gbShadow.Controls.Add(btnAnalyzeShadow);
+        gbShadow.Controls.Add(_gridShadow);
+
         tab.Controls.Add(gbPort);
         tab.Controls.Add(gbDocker);
+        tab.Controls.Add(gbActivePorts);
+        tab.Controls.Add(gbShadow);
 
         return tab;
     }
@@ -1581,9 +1782,66 @@ public partial class Form1 : Form
         }
 
         _trayMenu = new ContextMenuStrip();
+        UpdateTrayMenu();
+
+        _notifyIcon = new NotifyIcon
+        {
+            Icon = appIcon ?? SystemIcons.Application,
+            Text = "Dotnet",
+            ContextMenuStrip = _trayMenu,
+            Visible = true
+        };
+
+        _notifyIcon.MouseClick += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                RestoreFromTray();
+            }
+        };
+
+        _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+    }
+
+    private void UpdateTrayMenu()
+    {
+        if (_trayMenu == null) return;
+        _trayMenu.Items.Clear();
 
         var mnuShow = new ToolStripMenuItem("Tampilkan Dashboard", null, (s, e) => RestoreFromTray());
         mnuShow.Font = new Font(mnuShow.Font, FontStyle.Bold);
+
+        // Profiles Submenu
+        var activeProf = ProfileStore.GetActiveProfile();
+        var mnuProfile = new ToolStripMenuItem($"Profil: {activeProf.Name}");
+        foreach (var prof in ProfileStore.Profiles)
+        {
+            var pItem = new ToolStripMenuItem(prof.Name, null, (s, e) =>
+            {
+                ProfileStore.ActiveProfileId = prof.Id;
+                if (_cboProfile != null)
+                {
+                    _cboProfile.SelectedItem = prof.Name;
+                }
+                AppLogger.Log($"Tray: Switched active profile to: {prof.Name}");
+                RefreshServicesStatus();
+            })
+            {
+                Checked = prof.Id.Equals(activeProf.Id, StringComparison.OrdinalIgnoreCase)
+            };
+            mnuProfile.DropDownItems.Add(pItem);
+        }
+
+        // Service Statuses Submenu
+        int runningCount = _services.Count(s => s.Status == ServiceStatus.Running);
+        var mnuStatus = new ToolStripMenuItem($"Status Layanan ({runningCount} aktif)");
+        foreach (var svc in _services)
+        {
+            string icon = svc.Status == ServiceStatus.Running ? "●" : "○";
+            var item = new ToolStripMenuItem($"{icon} {svc.Name} ({svc.Status})");
+            item.Enabled = false;
+            mnuStatus.DropDownItems.Add(item);
+        }
 
         var mnuStartAll = new ToolStripMenuItem("▶ Start All Services", null, async (s, e) => await StartAllGroupServices());
         var mnuStopAll = new ToolStripMenuItem("⏹ Stop All Services", null, async (s, e) => await StopAllGroupServices());
@@ -1608,14 +1866,12 @@ public partial class Form1 : Form
             }
         });
 
-        var mnuExit = new ToolStripMenuItem("❌ Keluar / Exit", null, (s, e) =>
-        {
-            _allowClose = true;
-            _notifyIcon.Visible = false;
-            Application.Exit();
-        });
+        var mnuExit = new ToolStripMenuItem("❌ Keluar / Exit", null, (s, e) => HandleAppExit());
 
         _trayMenu.Items.Add(mnuShow);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add(mnuProfile);
+        _trayMenu.Items.Add(mnuStatus);
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add(mnuStartAll);
         _trayMenu.Items.Add(mnuStopAll);
@@ -1624,24 +1880,63 @@ public partial class Form1 : Form
         _trayMenu.Items.Add(mnuShortcut);
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add(mnuExit);
+    }
 
-        _notifyIcon = new NotifyIcon
+    private void HandleAppExit()
+    {
+        int runningCount = _services.Count(s => s.Status == ServiceStatus.Running);
+        if (runningCount > 0)
         {
-            Icon = appIcon ?? SystemIcons.Application,
-            Text = "Dotnet",
-            ContextMenuStrip = _trayMenu,
-            Visible = true
-        };
-
-        _notifyIcon.MouseClick += (s, e) =>
-        {
-            if (e.Button == MouseButtons.Left)
+            var pref = AppSettingsManager.Settings.ExitPreference;
+            if (pref == ExitActionPreference.Prompt)
             {
-                RestoreFromTray();
-            }
-        };
+                using var dlg = new ExitPolicyDialog(runningCount);
+                var result = dlg.ShowDialog(this);
+                if (result == DialogResult.Cancel)
+                {
+                    return;
+                }
 
-        _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+                if (dlg.StopServicesOnExit)
+                {
+                    StopAllGroupServicesSync();
+                }
+            }
+            else if (pref == ExitActionPreference.StopServices)
+            {
+                StopAllGroupServicesSync();
+            }
+        }
+
+        _allowClose = true;
+        _notifyIcon.Visible = false;
+        Application.Exit();
+    }
+
+    private void StopAllGroupServicesSync()
+    {
+        AppLogger.Log("Exit Policy: Stopping all active services...");
+        foreach (var svc in _services)
+        {
+            try
+            {
+                if (svc.Status == ServiceStatus.Running)
+                {
+                    if (svc.Type == DevServiceType.WindowsService)
+                    {
+                        WindowsServiceManager.StopService(svc.WindowsServiceName);
+                    }
+                    else
+                    {
+                        ProcessServiceManager.StopProcess(svc);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Exit Policy: Error stopping {svc.Name}: {ex.Message}");
+            }
+        }
     }
 
     protected override void WndProc(ref Message m)
@@ -1673,6 +1968,14 @@ public partial class Form1 : Form
         }
         else
         {
+            if (!_allowClose)
+            {
+                int runningCount = _services.Count(s => s.Status == ServiceStatus.Running);
+                if (runningCount > 0 && AppSettingsManager.Settings.ExitPreference == ExitActionPreference.StopServices)
+                {
+                    StopAllGroupServicesSync();
+                }
+            }
             _notifyIcon.Visible = false;
             base.OnFormClosing(e);
         }

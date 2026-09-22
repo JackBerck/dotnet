@@ -98,4 +98,9 @@ public class WindowsServiceManager
             return OperationResult.Fail($"Failed to stop {serviceName}: {ex.Message}", ex);
         }
     }
+
+    public static OperationResult StopService(string serviceName, TimeSpan? timeout = null)
+    {
+        return StopServiceAsync(serviceName, timeout ?? TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+    }
 }
