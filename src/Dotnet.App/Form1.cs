@@ -10,6 +10,7 @@ using dotnet.Config;
 using dotnet.Env;
 using dotnet.Installation;
 using dotnet.Models;
+using dotnet.Persistence;
 using dotnet.Services;
 
 namespace dotnet;
@@ -117,64 +118,156 @@ public partial class Form1 : Form
         }
     }
 
+    private void DetectDatabaseExecutionMode(DevServiceInfo svc)
+    {
+        string toolsDir = AppPaths.GetPath("tools");
+        string portableExe = "";
+
+        if (svc.Id == "mysql")
+        {
+            var tool = _toolStore.GetTool("mysql");
+            if (tool != null && !string.IsNullOrEmpty(tool.InstallPath))
+            {
+                portableExe = Path.Combine(tool.InstallPath, "bin", "mysqld.exe");
+            }
+            else
+            {
+                string cand = Path.Combine(toolsDir, "mysql", "current", "bin", "mysqld.exe");
+                if (File.Exists(cand)) portableExe = cand;
+                else if (File.Exists(@"C:\tools\mysql84\bin\mysqld.exe")) portableExe = @"C:\tools\mysql84\bin\mysqld.exe";
+            }
+        }
+        else if (svc.Id == "postgres")
+        {
+            var tool = _toolStore.GetTool("postgres");
+            if (tool != null && !string.IsNullOrEmpty(tool.InstallPath))
+            {
+                portableExe = Path.Combine(tool.InstallPath, "bin", "postgres.exe");
+            }
+            else
+            {
+                string cand = Path.Combine(toolsDir, "postgres", "current", "bin", "postgres.exe");
+                if (File.Exists(cand)) portableExe = cand;
+                else if (File.Exists(@"C:\tools\pgsql\bin\postgres.exe")) portableExe = @"C:\tools\pgsql\bin\postgres.exe";
+            }
+        }
+        else if (svc.Id == "redis")
+        {
+            var tool = _toolStore.GetTool("redis");
+            if (tool != null && !string.IsNullOrEmpty(tool.InstallPath))
+            {
+                portableExe = Path.Combine(tool.InstallPath, "redis-server.exe");
+            }
+            else
+            {
+                string cand = Path.Combine(toolsDir, "redis", "current", "redis-server.exe");
+                if (File.Exists(cand)) portableExe = cand;
+                else if (File.Exists(@"C:\tools\redis\redis-server.exe")) portableExe = @"C:\tools\redis\redis-server.exe";
+            }
+        }
+
+        if (!string.IsNullOrEmpty(portableExe) && File.Exists(portableExe))
+        {
+            svc.Type = DevServiceType.ManagedProcess;
+            svc.ExecutablePath = portableExe;
+            svc.IsPortable = true;
+            svc.DataDirectory = DatabaseInitializer.GetDataDirectory(svc.Id);
+            svc.Arguments = string.Join(" ", DatabaseInitializer.BuildRuntimeArguments(svc.Id, svc.Port));
+            svc.WorkingDirectory = Path.GetDirectoryName(portableExe) ?? "";
+        }
+        else
+        {
+            svc.Type = DevServiceType.WindowsService;
+            svc.IsPortable = false;
+        }
+    }
+
     private void SetupServicesList()
     {
-        _services.Add(new DevServiceInfo
+        string toolsDir = AppPaths.GetPath("tools");
+
+        var mysqlSvc = new DevServiceInfo
         {
             Id = "mysql",
             Name = "MySQL 8.4",
-            Type = DevServiceType.WindowsService,
             WindowsServiceName = "MySQL84",
             Port = 3306,
             AutoStartWithGroup = true,
             AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("mysql", true)
-        });
+        };
+        DetectDatabaseExecutionMode(mysqlSvc);
+        _services.Add(mysqlSvc);
 
-        _services.Add(new DevServiceInfo
+        var postgresSvc = new DevServiceInfo
         {
             Id = "postgres",
             Name = "PostgreSQL 17",
-            Type = DevServiceType.WindowsService,
             WindowsServiceName = "postgresql-x64-17",
             Port = 5432,
             AutoStartWithGroup = true,
             AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("postgres", true)
-        });
+        };
+        DetectDatabaseExecutionMode(postgresSvc);
+        _services.Add(postgresSvc);
 
-        _services.Add(new DevServiceInfo
+        var redisSvc = new DevServiceInfo
         {
             Id = "redis",
             Name = "Redis (Memurai)",
-            Type = DevServiceType.WindowsService,
             WindowsServiceName = "Memurai",
             Port = 6379,
             AutoStartWithGroup = true,
             AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("redis", true)
-        });
+        };
+        DetectDatabaseExecutionMode(redisSvc);
+        _services.Add(redisSvc);
+
+        string nginxExe = @"C:\tools\nginx\nginx.exe";
+        var nginxTool = _toolStore.GetTool("nginx");
+        if (nginxTool != null && File.Exists(Path.Combine(nginxTool.InstallPath, "nginx.exe")))
+        {
+            nginxExe = Path.Combine(nginxTool.InstallPath, "nginx.exe");
+        }
+        else if (File.Exists(Path.Combine(toolsDir, "nginx", "current", "nginx.exe")))
+        {
+            nginxExe = Path.Combine(toolsDir, "nginx", "current", "nginx.exe");
+        }
 
         _services.Add(new DevServiceInfo
         {
             Id = "nginx",
             Name = "Nginx Web Server",
             Type = DevServiceType.ManagedProcess,
-            ExecutablePath = @"C:\tools\nginx\nginx.exe",
+            ExecutablePath = nginxExe,
             Port = 80,
             AutoStartWithGroup = false,
             AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("nginx", false)
         });
+
+        string phpCgiExe = @"C:\tools\php85\php-cgi.exe";
+        var phpTool = _toolStore.GetTool("php");
+        if (phpTool != null && File.Exists(Path.Combine(phpTool.InstallPath, "php-cgi.exe")))
+        {
+            phpCgiExe = Path.Combine(phpTool.InstallPath, "php-cgi.exe");
+        }
+        else if (File.Exists(Path.Combine(toolsDir, "php", "current", "php-cgi.exe")))
+        {
+            phpCgiExe = Path.Combine(toolsDir, "php", "current", "php-cgi.exe");
+        }
 
         _services.Add(new DevServiceInfo
         {
             Id = "php-cgi",
             Name = "PHP 8.5 FastCGI",
             Type = DevServiceType.ManagedProcess,
-            ExecutablePath = @"C:\tools\php85\php-cgi.exe",
+            ExecutablePath = phpCgiExe,
             Arguments = "-b 127.0.0.1:9000",
             Port = 9000,
             AutoStartWithGroup = false,
             AutoStartOnBoot = ServiceSettingsManager.GetAutoStartOnBoot("php-cgi", false)
         });
     }
+
 
     private void BuildCustomUi()
     {
@@ -393,6 +486,11 @@ public partial class Form1 : Form
 
         foreach (var svc in _services)
         {
+            if (svc.Id == "mysql" || svc.Id == "postgres" || svc.Id == "redis")
+            {
+                DetectDatabaseExecutionMode(svc);
+            }
+
             if (svc.Type == DevServiceType.WindowsService)
             {
                 svc.Status = WindowsServiceManager.GetStatus(svc.WindowsServiceName);
@@ -429,11 +527,20 @@ public partial class Form1 : Form
             AutoSize = true
         };
 
+        var lblMode = new Label
+        {
+            Text = svc.IsPortable ? "[PORTABLE]" : "[WIN-SERVICE]",
+            ForeColor = svc.IsPortable ? Color.DarkBlue : Color.DarkSlateGray,
+            Font = new Font("Tahoma", 7.5F, FontStyle.Bold),
+            Location = new Point(175, 20),
+            AutoSize = true
+        };
+
         var lblPort = new Label
         {
             Text = $"Port: {svc.Port}",
             ForeColor = SystemColors.ControlDarkDark,
-            Location = new Point(230, 20),
+            Location = new Point(275, 20),
             AutoSize = true
         };
 
@@ -464,7 +571,7 @@ public partial class Form1 : Form
             Text = statusText,
             ForeColor = statusColor,
             Font = new Font("Tahoma", 8.5F, FontStyle.Bold),
-            Location = new Point(340, 19),
+            Location = new Point(365, 19),
             AutoSize = true
         };
 
@@ -472,7 +579,7 @@ public partial class Form1 : Form
         {
             Text = svc.ProcessId.HasValue ? $"PID: {svc.ProcessId}" : "",
             ForeColor = SystemColors.ControlDarkDark,
-            Location = new Point(470, 20),
+            Location = new Point(480, 20),
             AutoSize = true
         };
 
@@ -487,13 +594,34 @@ public partial class Form1 : Form
             AutoSize = true
         };
 
+        bool needsInit = svc.IsPortable && (svc.Id == "mysql" || svc.Id == "postgres") && !DatabaseInitializer.IsInitialized(svc.Id);
+        if (needsInit)
+        {
+            var btnInitDb = new Button
+            {
+                Text = "⚡ Init DB",
+                FlatStyle = FlatStyle.Standard,
+                Size = new Size(68, 26),
+                Location = new Point(625, 14),
+                Cursor = Cursors.Hand
+            };
+            btnInitDb.Click += async (s, e) =>
+            {
+                btnInitDb.Enabled = false;
+                var res = await DatabaseInitializer.InitializeAsync(svc.Id, svc.ExecutablePath);
+                MessageBox.Show(res.Message, res.Success ? "Database Initialized" : "Init Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+                RefreshServicesStatus();
+            };
+            card.Controls.Add(btnInitDb);
+        }
+
         var chkAutoBoot = new CheckBox
         {
-            Text = "Auto-Start Boot",
+            Text = "Auto-Boot",
             Checked = svc.AutoStartOnBoot,
             ForeColor = SystemColors.ControlText,
             Font = new Font("Tahoma", 8.25F),
-            Location = new Point(640, 19),
+            Location = new Point(700, 19),
             AutoSize = true,
             Cursor = Cursors.Hand
         };
@@ -507,8 +635,8 @@ public partial class Form1 : Form
         {
             Text = svc.Status == ServiceStatus.Running ? "Stop" : "Start",
             FlatStyle = FlatStyle.Standard,
-            Size = new Size(80, 26),
-            Location = new Point(780, 14),
+            Size = new Size(75, 26),
+            Location = new Point(790, 14),
             Cursor = Cursors.Hand,
             Enabled = svc.Status != ServiceStatus.NotInstalled
         };
@@ -525,6 +653,7 @@ public partial class Form1 : Form
             }
             RefreshServicesStatus();
         };
+
 
         var btnRestart = new Button
         {
@@ -555,6 +684,7 @@ public partial class Form1 : Form
         btnLogs.Click += (s, e) => OpenServiceConfig(svc);
 
         card.Controls.Add(lblName);
+        card.Controls.Add(lblMode);
         card.Controls.Add(lblPort);
         card.Controls.Add(lblStatus);
         card.Controls.Add(lblPid);
@@ -580,7 +710,16 @@ public partial class Form1 : Form
         }
         else if (svc.Id == "mysql")
         {
-            path = @"C:\tools\mysql84\my.ini";
+            string localIni = Path.Combine(svc.DataDirectory ?? "", "my.ini");
+            path = File.Exists(localIni) ? localIni : @"C:\tools\mysql84\my.ini";
+        }
+        else if (svc.Id == "postgres")
+        {
+            path = Path.Combine(svc.DataDirectory ?? "", "postgresql.conf");
+        }
+        else if (svc.Id == "redis")
+        {
+            path = Path.Combine(AppPaths.GetPath("tools/redis/current"), "redis.conf");
         }
 
         if (!string.IsNullOrEmpty(path) && File.Exists(path))
@@ -1136,12 +1275,32 @@ public partial class Form1 : Form
             if (p != null) ProjectManager.OpenBrowser(p.NginxHost);
         };
 
+        var btnEnableHttps = new Button
+        {
+            Text = "🔒 HTTPS (.test)",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(115, 26),
+            Location = new Point(696, 6),
+            Cursor = Cursors.Hand
+        };
+        btnEnableHttps.Click += async (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null)
+            {
+                var res = await NginxSiteGenerator.CreateOrUpdateSiteWithSslAsync(p);
+                MessageBox.Show(res.Message, res.Success ? "HTTPS Configured" : "HTTPS Setup Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+                RefreshProjectsGrid();
+                RefreshHostsGrid();
+            }
+        };
+
         var btnDelete = new Button
         {
             Text = "❌ Delete",
             FlatStyle = FlatStyle.Standard,
             Size = new Size(75, 26),
-            Location = new Point(696, 6),
+            Location = new Point(816, 6),
             Cursor = Cursors.Hand
         };
         btnDelete.Click += async (s, e) =>
@@ -1165,7 +1324,7 @@ public partial class Form1 : Form
             Text = "🔄 Refresh",
             FlatStyle = FlatStyle.Standard,
             Size = new Size(75, 26),
-            Location = new Point(776, 6),
+            Location = new Point(896, 6),
             Cursor = Cursors.Hand
         };
         btnReloadProjects.Click += (s, e) => RefreshProjectsGrid();
@@ -1177,6 +1336,7 @@ public partial class Form1 : Form
         topBar.Controls.Add(btnOpenTerminal);
         topBar.Controls.Add(btnOpenCode);
         topBar.Controls.Add(btnOpenBrowser);
+        topBar.Controls.Add(btnEnableHttps);
         topBar.Controls.Add(btnDelete);
         topBar.Controls.Add(btnReloadProjects);
 
@@ -1804,12 +1964,43 @@ public partial class Form1 : Form
         };
         btnRefreshLog.Click += (s, e) => RefreshNginxLog();
 
+        var btnTrustRootCa = new Button
+        {
+            Text = "🔒 Trust Root CA",
+            Location = new Point(145, 260),
+            Size = new Size(140, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnTrustRootCa.Click += (s, e) =>
+        {
+            var op = LocalCertificateManager.TrustRootCertificate();
+            MessageBox.Show(op.Message, op.Success ? "Root CA Trusted" : "Trust Error", MessageBoxButtons.OK, op.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        };
+
+        var btnOpenSslFolder = new Button
+        {
+            Text = "📁 SSL Folder",
+            Location = new Point(295, 260),
+            Size = new Size(130, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnOpenSslFolder.Click += (s, e) =>
+        {
+            string sslDir = LocalCertificateManager.GetSslDirectory();
+            if (!Directory.Exists(sslDir)) Directory.CreateDirectory(sslDir);
+            System.Diagnostics.Process.Start("explorer.exe", sslDir);
+        };
+
         pnlNginx.Controls.Add(btnTestNginx);
         pnlNginx.Controls.Add(btnReloadNginx);
         pnlNginx.Controls.Add(btnOpenSitesFolder);
         pnlNginx.Controls.Add(lblLogTitle);
         pnlNginx.Controls.Add(_txtNginxErrorLog);
         pnlNginx.Controls.Add(btnRefreshLog);
+        pnlNginx.Controls.Add(btnTrustRootCa);
+        pnlNginx.Controls.Add(btnOpenSslFolder);
 
         tab.Controls.Add(pnlPhp);
         tab.Controls.Add(pnlPhpPool);
@@ -1965,7 +2156,7 @@ public partial class Form1 : Form
             ReadOnly = true
         };
 
-        btnRunDockerCheck.Click += (s, e) =>
+        btnRunDockerCheck.Click += async (s, e) =>
         {
             if (string.IsNullOrWhiteSpace(txtDockerPath.Text) || !File.Exists(txtDockerPath.Text))
             {
@@ -1973,26 +2164,40 @@ public partial class Form1 : Form
                 return;
             }
 
-            var conflicts = DockerPortChecker.CheckComposeFile(txtDockerPath.Text);
-            if (conflicts.Count == 0)
-            {
-                txtDockerResult.Text = "No host port mappings detected in compose file.";
-                return;
-            }
+            btnRunDockerCheck.Enabled = false;
+            txtDockerResult.Text = "Inspecting compose file ports...";
+
+            var report = await DockerPortChecker.CheckComposeFileAsync(txtDockerPath.Text);
+            btnRunDockerCheck.Enabled = true;
 
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("Docker Pre-Flight Inspection Results:");
-            sb.AppendLine("------------------------------------");
+            sb.AppendLine("Docker Compose Pre-Flight Port Report:");
+            sb.AppendLine("--------------------------------------------------");
+            sb.AppendLine($"Parser Mode: {(report.IsDockerAvailable ? "Docker CLI Config" : "YAML Fallback")}");
+            sb.AppendLine($"Status: {report.Message}");
+            sb.AppendLine();
 
-            foreach (var c in conflicts)
+            if (report.Conflicts.Count == 0)
             {
-                if (c.IsConflicting)
+                sb.AppendLine("No published host port bindings found in compose file.");
+            }
+            else
+            {
+                foreach (var c in report.Conflicts)
                 {
-                    sb.AppendLine($"❌ CONFLICT: Host Port {c.HostPort} -> {c.ConflictOwner}");
-                }
-                else
-                {
-                    sb.AppendLine($"✅ Host Port {c.HostPort} is available.");
+                    if (c.IsSameProjectContainer)
+                    {
+                        sb.AppendLine($"ℹ️ Port {c.HostPort} -> Running container of this project (safe).");
+                    }
+                    else if (c.IsConflicting)
+                    {
+                        sb.AppendLine($"❌ CONFLICT: Port {c.HostPort} ({c.ServiceName}) -> {c.ConflictOwner}");
+                        sb.AppendLine($"   👉 Suggested Override: {c.SuggestedOverridePort}");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"✅ Port {c.HostPort} ({c.ServiceName}:{c.ContainerPort}/{c.Protocol}) -> Free.");
+                    }
                 }
             }
 

@@ -1,7 +1,7 @@
 # PROGRESS TRACKING — Dotnet (Standalone Dev Manager)
 
 > Sinkronisasi otomatis dengan [`PROJECT-SPEC.md`](PROJECT-SPEC.md).
-> Terakhir diperbarui: **2026-09-23** (Pasca Update 5 / Fase 4 MVP).
+> Terakhir diperbarui: **2026-09-23** (Pasca Update 6 / Fase 5 MVP).
 
 ---
 
@@ -14,8 +14,9 @@
 | **Fase 2** | Catalog & Installer Tool (Node, PHP, MinGit, Nginx, Composer, Bun, Go) | 🟢 **MVP Selesai** | 90% |
 | **Fase 3** | Runtime Terintegrasi, Tray & Profile | 🟢 **MVP Selesai** | 95% |
 | **Fase 4** | Konfigurasi & Project Manager v2 | 🟢 **MVP Selesai** | 95% |
-| **Fase 5** | Database Portable & Perluasan (Docker v2) | ⚪ Belum Dimulai | 0% |
+| **Fase 5** | Database Portable & Perluasan (Docker v2) | 🟢 **MVP Selesai** | 90% |
 | **Fase 6** | Rilis, Installer & Distribusi | ⚪ Belum Dimulai | 0% |
+
 
 ---
 
@@ -96,6 +97,14 @@
 - [x] **T4-4:** PHP FastCGI Pool Manager (`PhpPoolManager.cs` multi-worker sequential ports 9000..900N, auto Nginx `upstream php_pool` generator).
 - [x] **T4-5:** Tab UI **Projects** v2 (split-view grid, toolbar Add/Auto-detect/Run/Domain/Terminal/VSCode/Browser/Delete, 1-click dialog domain) & Tab **Config** v2 (PHP limits, presets, dynamic extensions checklist, fastcgi pool size, nginx test & reload).
 
+### Fase 5 — Database Portable & Perluasan (Docker v2) (MVP Selesai)
+- [x] **T5-1:** Portable Database Initializer (`DatabaseInitializer.cs` untuk MySQL `mysqld --initialize-insecure` & PostgreSQL `initdb`, folder `%LOCALAPPDATA%\Dotnet\data\`).
+- [x] **T5-2:** Dual-mode Service Model (`DevServiceInfo.cs` execution mode: deteksi otomatis portable executable di catalog/tools vs legacy Windows Service fallback).
+- [x] **T5-3:** Prerequisite Checker (`VcRedistChecker.cs` memeriksa registry VC++ 2015-2022 x64 sebelum run database/PHP).
+- [x] **T5-4:** Docker Compose Port Checker v2 (`DockerPortChecker.cs` via `docker compose config --format json`, port ranges `8000-8010`, exclusion container proyek sendiri, fallback robust YAML parser, suggested overrides).
+- [x] **T5-5:** Local HTTPS Certificate Manager (`LocalCertificateManager.cs` Root CA + SAN per-domain certs via .NET `X509Certificate2`, Nginx SSL vhost port 443 + HTTP-to-HTTPS redirect, export ke `%LOCALAPPDATA%\Dotnet\ssl\`).
+- [x] **T5-6:** UI Integrations Form1 (Database card `[PORTABLE]` / `[WIN-SERVICE]` badge & 1-click "Init DB" button, Tab Projects "🔒 HTTPS (.test)" button, Tab Config Root CA trust & SSL folder, Tab Diagnostics async Docker pre-flight report).
+
 ---
 
 ## Log Riwayat Update
@@ -105,4 +114,5 @@
 - **Update 3 (`632e1d7`):** Tool Catalog & Installer MVP. Manifest deklaratif ter-embed (PHP, Node, Composer, Git, Nginx, Bun, Go), `SafeExtractor` (anti zip-slip/bomb), `ToolDownloader` (SHA-256), `EnvironmentService` (User PATH `REG_EXPAND_SZ` + `WM_SETTINGCHANGE`), `InstalledToolStore`, `AdoptExistingScanner`, `JunctionManager`, tab WinForms "Tools & Packages" classic style, 20 unit tests lolos.
 - **Update 4 (Fase 3):** Runtime terintegrasi & profile system (`standalone` vs `docker`), `ServiceOrchestrator` start/stop ordered, `ProcessTracker` re-adopsi proses eksisting (F-15) + crash detection, `TaskSchedulerManager` elevated logon autostart (F-10), Port Monitor snapshot & PATH shadow analyzer di Tab Diagnostics, Exit Policy dialog (D7), 27 unit tests lolos.
 - **Update 5 (Fase 4):** Konfigurasi & Project Manager v2. Schema config generator (`ConfigSchema`), dynamic PHP extensions scanner & diff preset, async `git config`/`npm config`, `FrameworkDetector` (Laravel, Next.js, Vite, Node, Static), terminal & VS Code runner, `NginxSiteGenerator` dengan vhost di `%LOCALAPPDATA%\Dotnet\nginx\sites\` + auto include + hosts file mapping + atomic rollback, `PhpPoolManager` multi-worker FastCGI upstream, UI modern legacy Win7/XP untuk Tab Projects v2 dan Tab Config v2, 36 unit tests lolos (0 warnings, 0 errors).
+- **Update 6 (Fase 5):** Database Portable & Perluasan (Docker v2). Dual-mode database execution (portable process vs Windows Service), `DatabaseInitializer` (`mysqld --initialize-insecure` & `initdb`), `VcRedistChecker` registry scanner, `DockerPortChecker` v2 (`docker compose config --format json`, port ranges, self-project exclusion, suggested overrides), `LocalCertificateManager` (Root CA + per-domain SSL `.test` certs), Nginx SSL vhost generation + redirect, UI upgrades classic Win7/XP (DB card `[PORTABLE]` badge & Init DB button, Projects 1-click HTTPS, Config Root CA trust & SSL folder, Diagnostics Docker compose inspector), 48 unit tests lolos (0 warnings, 0 errors).
 

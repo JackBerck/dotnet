@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "mysql",
+  "displayName": "MySQL Database Server",
+  "category": "database",
+  "homepage": "https://dev.mysql.com/",
+  "license": "GPL-2.0",
+  "platforms": ["win-x64"],
+  "prerequisites": ["vcredist-2015-2022-x64"],
+  "allowedHosts": ["dev.mysql.com", "cdn.mysql.com"],
+  "versions": [
+    {
+      "version": "8.4.4",
+      "source": {
+        "type": "zip",
+        "url": "https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.4-winx64.zip",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "stripRoot": true
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["bin"],
+    "envVars": {}
+  },
+  "verify": {
+    "command": "bin/mysqld.exe",
+    "args": ["--version"],
+    "expectRegex": "mysqld"
+  }
+}

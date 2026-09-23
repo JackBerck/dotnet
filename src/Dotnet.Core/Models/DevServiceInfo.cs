@@ -21,4 +21,6 @@ public class DevServiceInfo
     public string StatusMessage { get; set; } = string.Empty;
     public bool AutoStartWithGroup { get; set; } = true;
     public bool AutoStartOnBoot { get; set; } = true;
+    public bool IsPortable { get; set; } = false;
+    public string? DataDirectory { get; set; } = null;
 }
