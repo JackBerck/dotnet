@@ -235,6 +235,129 @@ public class IniDocument
         return sb.ToString();
     }
 
+    public List<(string Name, bool IsActive)> ListExtensions()
+    {
+        var result = new List<(string Name, bool IsActive)>();
+
+        foreach (var line in _lines)
+        {
+            if (line.Kind == IniLine.LineKind.KeyValue &&
+                (string.Equals(line.Key, "extension", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(line.Key, "zend_extension", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!string.IsNullOrWhiteSpace(line.Value))
+                {
+                    result.Add((NormalizeExtensionName(line.Value), true));
+                }
+            }
+            else if (line.Kind == IniLine.LineKind.Comment && line.IsCommentedOutKeyValue &&
+                     (string.Equals(line.CommentedKey, "extension", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(line.CommentedKey, "zend_extension", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!string.IsNullOrWhiteSpace(line.Value))
+                {
+                    result.Add((NormalizeExtensionName(line.Value), false));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    public void EnableExtension(string extName)
+    {
+        string norm = NormalizeExtensionName(extName);
+
+        // Check if already active
+        var active = _lines.FirstOrDefault(l =>
+            l.Kind == IniLine.LineKind.KeyValue &&
+            (string.Equals(l.Key, "extension", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(l.Key, "zend_extension", StringComparison.OrdinalIgnoreCase)) &&
+            string.Equals(NormalizeExtensionName(l.Value ?? ""), norm, StringComparison.OrdinalIgnoreCase));
+
+        if (active != null) return; // Already enabled
+
+        // Find commented-out line
+        var commented = _lines.FirstOrDefault(l =>
+            l.Kind == IniLine.LineKind.Comment && l.IsCommentedOutKeyValue &&
+            (string.Equals(l.CommentedKey, "extension", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(l.CommentedKey, "zend_extension", StringComparison.OrdinalIgnoreCase)) &&
+            string.Equals(NormalizeExtensionName(l.Value ?? ""), norm, StringComparison.OrdinalIgnoreCase));
+
+        if (commented != null)
+        {
+            commented.Kind = IniLine.LineKind.KeyValue;
+            commented.Key = commented.CommentedKey ?? "extension";
+            commented.IsCommentedOutKeyValue = false;
+            commented.Raw = $"{commented.Key} = {commented.Value} {commented.InlineComment}".Trim();
+            return;
+        }
+
+        // Otherwise append to file
+        _lines.Add(new IniLine
+        {
+            Kind = IniLine.LineKind.KeyValue,
+            Key = "extension",
+            Value = norm,
+            Raw = $"extension = {norm}"
+        });
+    }
+
+    public void DisableExtension(string extName)
+    {
+        string norm = NormalizeExtensionName(extName);
+
+        var active = _lines.FirstOrDefault(l =>
+            l.Kind == IniLine.LineKind.KeyValue &&
+            (string.Equals(l.Key, "extension", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(l.Key, "zend_extension", StringComparison.OrdinalIgnoreCase)) &&
+            string.Equals(NormalizeExtensionName(l.Value ?? ""), norm, StringComparison.OrdinalIgnoreCase));
+
+        if (active != null)
+        {
+            active.Kind = IniLine.LineKind.Comment;
+            active.IsCommentedOutKeyValue = true;
+            active.CommentedKey = active.Key;
+            active.Raw = $";{active.Key} = {active.Value} {active.InlineComment}".Trim();
+        }
+    }
+
+    public static string NormalizeExtensionName(string raw)
+    {
+        string s = raw.Trim().Trim('"').Trim('\'');
+        if (s.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s.Substring(0, s.Length - 4);
+        }
+        if (s.StartsWith("php_", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s.Substring(4);
+        }
+        return s;
+    }
+
+    public string ToDiff(string otherContent)
+    {
+        var oldLines = ToContent().Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        var newLines = otherContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+
+        var sb = new StringBuilder();
+        int max = Math.Max(oldLines.Length, newLines.Length);
+        for (int i = 0; i < max; i++)
+        {
+            string oldL = i < oldLines.Length ? oldLines[i] : "";
+            string newL = i < newLines.Length ? newLines[i] : "";
+
+            if (oldL != newL)
+            {
+                if (i < oldLines.Length) sb.AppendLine($"- {oldL}");
+                if (i < newLines.Length) sb.AppendLine($"+ {newL}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
     public void Save(string filePath)
     {
         string dir = Path.GetDirectoryName(filePath) ?? "";

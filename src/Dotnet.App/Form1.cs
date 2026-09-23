@@ -41,6 +41,10 @@ public partial class Form1 : Form
     private TextBox _phpUploadMax = null!;
     private TextBox _phpPostMax = null!;
     private TextBox _phpMaxExec = null!;
+    private TextBox _phpTimezone = null!;
+    private CheckedListBox _lstPhpExtensions = null!;
+    private NumericUpDown _numPhpPoolSize = null!;
+    private RichTextBox _txtNginxErrorLog = null!;
     private Label _adminStatusLabel = null!;
     private ComboBox _cboProfile = null!;
     private DataGridView _gridActivePorts = null!;
@@ -1022,33 +1026,158 @@ public partial class Form1 : Form
         }
     }
 
-    // TAB 3: PROJECTS
+    // TAB 3: PROJECTS (V2)
     private TabPage CreateProjectsTab()
     {
         var tab = new TabPage("Projects") { BackColor = SystemColors.Control };
 
-        var topBar = new Panel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(5) };
+        var topBar = new Panel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(4) };
+
         var btnAddProject = new Button
         {
-            Text = "+ Add Project",
+            Text = "➕ Add Project",
             FlatStyle = FlatStyle.Standard,
-            Size = new Size(110, 26),
-            Location = new Point(8, 6),
+            Size = new Size(95, 26),
+            Location = new Point(6, 6),
             Cursor = Cursors.Hand
         };
         btnAddProject.Click += (s, e) => ShowAddProjectDialog();
 
+        var btnDetectFolder = new Button
+        {
+            Text = "🔍 Auto-Detect...",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(110, 26),
+            Location = new Point(106, 6),
+            Cursor = Cursors.Hand
+        };
+        btnDetectFolder.Click += (s, e) =>
+        {
+            using var fbd = new FolderBrowserDialog { Description = "Select Project Root Folder" };
+            if (fbd.ShowDialog() == DialogResult.OK)
+            {
+                ShowAddProjectDialog(fbd.SelectedPath);
+            }
+        };
+
+        var btnRunCmd = new Button
+        {
+            Text = "▶ Run Dev",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(85, 26),
+            Location = new Point(221, 6),
+            Cursor = Cursors.Hand
+        };
+        btnRunCmd.Click += (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null) ProjectManager.LaunchDevCommand(p);
+        };
+
+        var btnSetupDomain = new Button
+        {
+            Text = "🌐 Setup Domain",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(115, 26),
+            Location = new Point(311, 6),
+            Cursor = Cursors.Hand
+        };
+        btnSetupDomain.Click += async (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null)
+            {
+                var res = await NginxSiteGenerator.CreateOrUpdateSiteAsync(p);
+                MessageBox.Show(res.Message, res.Success ? "Domain Setup Complete" : "Domain Setup Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+                RefreshProjectsGrid();
+                RefreshHostsGrid();
+            }
+        };
+
+        var btnOpenTerminal = new Button
+        {
+            Text = "💻 Terminal",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(85, 26),
+            Location = new Point(431, 6),
+            Cursor = Cursors.Hand
+        };
+        btnOpenTerminal.Click += (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null) ProjectManager.OpenTerminal(p.Path);
+        };
+
+        var btnOpenCode = new Button
+        {
+            Text = "📝 VS Code",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(85, 26),
+            Location = new Point(521, 6),
+            Cursor = Cursors.Hand
+        };
+        btnOpenCode.Click += (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null) ProjectManager.OpenInVSCode(p.Path);
+        };
+
+        var btnOpenBrowser = new Button
+        {
+            Text = "🌐 Browser",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(80, 26),
+            Location = new Point(611, 6),
+            Cursor = Cursors.Hand
+        };
+        btnOpenBrowser.Click += (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null) ProjectManager.OpenBrowser(p.NginxHost);
+        };
+
+        var btnDelete = new Button
+        {
+            Text = "❌ Delete",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(75, 26),
+            Location = new Point(696, 6),
+            Cursor = Cursors.Hand
+        };
+        btnDelete.Click += async (s, e) =>
+        {
+            var p = GetSelectedProject();
+            if (p != null)
+            {
+                var confirm = MessageBox.Show($"Remove project '{p.Name}'?\nThis will also remove any configured Nginx site & hosts entries.", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (confirm == DialogResult.Yes)
+                {
+                    await NginxSiteGenerator.RemoveSiteAsync(p);
+                    ProjectManager.DeleteProject(p.Id);
+                    RefreshProjectsGrid();
+                    RefreshHostsGrid();
+                }
+            }
+        };
+
         var btnReloadProjects = new Button
         {
-            Text = "🔄 Refresh List",
+            Text = "🔄 Refresh",
             FlatStyle = FlatStyle.Standard,
-            Size = new Size(100, 26),
-            Location = new Point(125, 6),
+            Size = new Size(75, 26),
+            Location = new Point(776, 6),
             Cursor = Cursors.Hand
         };
         btnReloadProjects.Click += (s, e) => RefreshProjectsGrid();
 
         topBar.Controls.Add(btnAddProject);
+        topBar.Controls.Add(btnDetectFolder);
+        topBar.Controls.Add(btnRunCmd);
+        topBar.Controls.Add(btnSetupDomain);
+        topBar.Controls.Add(btnOpenTerminal);
+        topBar.Controls.Add(btnOpenCode);
+        topBar.Controls.Add(btnOpenBrowser);
+        topBar.Controls.Add(btnDelete);
         topBar.Controls.Add(btnReloadProjects);
 
         _projectsGrid = new DataGridView
@@ -1059,7 +1188,10 @@ public partial class Form1 : Form
             BorderStyle = BorderStyle.Fixed3D,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            AllowUserToAddRows = false
+            MultiSelect = false,
+            AllowUserToAddRows = false,
+            RowHeadersVisible = false,
+            ReadOnly = true
         };
 
         _projectsGrid.Columns.Add("Id", "ID");
@@ -1067,31 +1199,16 @@ public partial class Form1 : Form
         {
             _projectsGrid.Columns["Id"]!.Visible = false;
         }
-        _projectsGrid.Columns.Add("Name", "Project Name");
-        _projectsGrid.Columns.Add("Path", "Directory Path");
-        _projectsGrid.Columns.Add("DevCmd", "Dev Command");
-        _projectsGrid.Columns.Add("Host", "Local Domain");
+        _projectsGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Project Name", Name = "Name", FillWeight = 20 });
+        _projectsGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Framework", Name = "Framework", FillWeight = 12 });
+        _projectsGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Local Domain", Name = "Host", FillWeight = 18 });
+        _projectsGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Dev Command", Name = "DevCmd", FillWeight = 20 });
+        _projectsGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Directory Path", Name = "Path", FillWeight = 30 });
 
-        var btnColRun = new DataGridViewButtonColumn
+        _projectsGrid.DoubleClick += (s, e) =>
         {
-            HeaderText = "Action",
-            Text = "Run Command",
-            UseColumnTextForButtonValue = true,
-            FlatStyle = FlatStyle.Standard
-        };
-        _projectsGrid.Columns.Add(btnColRun);
-
-        _projectsGrid.CellClick += (s, e) =>
-        {
-            if (e.RowIndex >= 0 && e.ColumnIndex == _projectsGrid.Columns.Count - 1)
-            {
-                string id = _projectsGrid.Rows[e.RowIndex].Cells["Id"].Value?.ToString() ?? "";
-                var p = ProjectManager.GetProjects().FirstOrDefault(proj => proj.Id == id);
-                if (p != null)
-                {
-                    ProjectManager.LaunchDevCommand(p);
-                }
-            }
+            var p = GetSelectedProject();
+            if (p != null) ProjectManager.LaunchDevCommand(p);
         };
 
         RefreshProjectsGrid();
@@ -1102,21 +1219,32 @@ public partial class Form1 : Form
         return tab;
     }
 
+    private ProjectInfo? GetSelectedProject()
+    {
+        if (_projectsGrid.SelectedRows.Count > 0)
+        {
+            string id = _projectsGrid.SelectedRows[0].Cells["Id"].Value?.ToString() ?? "";
+            return ProjectManager.GetProjects().FirstOrDefault(p => p.Id == id);
+        }
+        MessageBox.Show("Please select a project from the list first.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        return null;
+    }
+
     private void RefreshProjectsGrid()
     {
         _projectsGrid.Rows.Clear();
         foreach (var p in ProjectManager.GetProjects())
         {
-            _projectsGrid.Rows.Add(p.Id, p.Name, p.Path, p.DevCommand, p.NginxHost);
+            _projectsGrid.Rows.Add(p.Id, p.Name, p.Framework, p.NginxHost, p.DevCommand, p.Path);
         }
     }
 
-    private void ShowAddProjectDialog()
+    private void ShowAddProjectDialog(string? initialPath = null)
     {
         using var dlg = new Form
         {
-            Text = "Add New Project",
-            Size = new Size(450, 310),
+            Text = "Add / Auto-Detect Project - Dotnet",
+            Size = new Size(500, 390),
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
@@ -1126,59 +1254,154 @@ public partial class Form1 : Form
             Font = new Font("Tahoma", 8.25F)
         };
 
-        var lbl1 = new Label { Text = "Project Name:", Location = new Point(20, 20), AutoSize = true };
-        var txtName = new TextBox { Location = new Point(140, 18), Width = 260, BorderStyle = BorderStyle.Fixed3D };
+        var lblPath = new Label { Text = "Project Directory:", Location = new Point(20, 20), AutoSize = true };
+        var txtPath = new TextBox { Location = new Point(140, 18), Width = 230, BorderStyle = BorderStyle.Fixed3D, Text = initialPath ?? "" };
+        var btnBrowse = new Button { Text = "Browse...", Location = new Point(380, 16), Width = 80, Height = 25, FlatStyle = FlatStyle.Standard };
 
-        var lbl2 = new Label { Text = "Project Directory:", Location = new Point(20, 55), AutoSize = true };
-        var txtPath = new TextBox { Location = new Point(140, 53), Width = 180, BorderStyle = BorderStyle.Fixed3D };
-        var btnBrowse = new Button { Text = "Browse...", Location = new Point(330, 51), Width = 70, Height = 24, FlatStyle = FlatStyle.Standard };
+        var btnDetect = new Button
+        {
+            Text = "🔍 Auto-Detect Framework & Config",
+            Location = new Point(140, 50),
+            Width = 320,
+            Height = 26,
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+
+        var lblName = new Label { Text = "Project Name:", Location = new Point(20, 90), AutoSize = true };
+        var txtName = new TextBox { Location = new Point(140, 88), Width = 320, BorderStyle = BorderStyle.Fixed3D };
+
+        var lblFw = new Label { Text = "Framework:", Location = new Point(20, 125), AutoSize = true };
+        var cboFw = new ComboBox
+        {
+            Location = new Point(140, 123),
+            Width = 150,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            FlatStyle = FlatStyle.Standard
+        };
+        cboFw.Items.AddRange(new object[] { "laravel", "nextjs", "vite", "node", "php", "static", "custom" });
+        cboFw.SelectedItem = "custom";
+
+        var lblPublic = new Label { Text = "Public Dir:", Location = new Point(310, 125), AutoSize = true };
+        var txtPublic = new TextBox { Location = new Point(375, 123), Width = 85, BorderStyle = BorderStyle.Fixed3D, Text = "public" };
+
+        var lblCmd = new Label { Text = "Dev Command:", Location = new Point(20, 160), AutoSize = true };
+        var txtCmd = new TextBox { Text = "npm run dev", Location = new Point(140, 158), Width = 220, BorderStyle = BorderStyle.Fixed3D };
+
+        var lblPort = new Label { Text = "Port:", Location = new Point(375, 160), AutoSize = true };
+        var txtPort = new TextBox { Location = new Point(410, 158), Width = 50, BorderStyle = BorderStyle.Fixed3D };
+
+        var lblHost = new Label { Text = "Local Domain:", Location = new Point(20, 195), AutoSize = true };
+        var txtHost = new TextBox { Text = "myproject.test", Location = new Point(140, 193), Width = 320, BorderStyle = BorderStyle.Fixed3D };
+
+        var chkSetupDomain = new CheckBox
+        {
+            Text = "🌐 Setup Nginx site & local hosts (.test) immediately",
+            Location = new Point(140, 230),
+            Size = new Size(330, 22),
+            Checked = true,
+            FlatStyle = FlatStyle.Standard
+        };
+
+        void RunDetection()
+        {
+            if (Directory.Exists(txtPath.Text.Trim()))
+            {
+                var res = FrameworkDetector.Detect(txtPath.Text.Trim());
+                txtName.Text = res.SuggestedName;
+                cboFw.SelectedItem = res.Framework;
+                txtCmd.Text = res.DevCommand;
+                txtPort.Text = res.SuggestedPort?.ToString() ?? "";
+                txtPublic.Text = res.PublicDirectory;
+                txtHost.Text = res.SuggestedHost;
+            }
+        }
+
         btnBrowse.Click += (s, e) =>
         {
             using var fbd = new FolderBrowserDialog();
-            if (fbd.ShowDialog() == DialogResult.OK) txtPath.Text = fbd.SelectedPath;
+            if (fbd.ShowDialog() == DialogResult.OK)
+            {
+                txtPath.Text = fbd.SelectedPath;
+                RunDetection();
+            }
         };
 
-        var lbl3 = new Label { Text = "Dev Command:", Location = new Point(20, 90), AutoSize = true };
-        var txtCmd = new TextBox { Text = "composer run dev", Location = new Point(140, 88), Width = 260, BorderStyle = BorderStyle.Fixed3D };
+        btnDetect.Click += (s, e) => RunDetection();
 
-        var lbl4 = new Label { Text = "Nginx Host Domain:", Location = new Point(20, 125), AutoSize = true };
-        var txtHost = new TextBox { Text = "project.test", Location = new Point(140, 123), Width = 260, BorderStyle = BorderStyle.Fixed3D };
+        if (!string.IsNullOrEmpty(initialPath))
+        {
+            RunDetection();
+        }
 
         var btnSave = new Button
         {
             Text = "Save Project",
-            DialogResult = DialogResult.OK,
-            Location = new Point(140, 180),
-            Width = 110,
-            Height = 30,
-            FlatStyle = FlatStyle.Standard
+            Location = new Point(140, 280),
+            Width = 140,
+            Height = 32,
+            FlatStyle = FlatStyle.Standard,
+            DialogResult = DialogResult.OK
         };
 
-        btnSave.Click += (s, e) =>
+        btnSave.Click += async (s, e) =>
         {
             if (string.IsNullOrWhiteSpace(txtName.Text) || string.IsNullOrWhiteSpace(txtPath.Text))
             {
-                MessageBox.Show("Please fill Name and Path.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please fill Name and Directory Path.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 dlg.DialogResult = DialogResult.None;
                 return;
             }
 
-            ProjectManager.AddOrUpdateProject(new ProjectInfo
+            int? devPort = int.TryParse(txtPort.Text.Trim(), out int parsedPort) ? parsedPort : null;
+
+            var project = new ProjectInfo
             {
                 Name = txtName.Text.Trim(),
                 Path = txtPath.Text.Trim(),
+                Framework = cboFw.SelectedItem?.ToString() ?? "custom",
+                PublicDirectory = txtPublic.Text.Trim(),
                 DevCommand = txtCmd.Text.Trim(),
+                DevPort = devPort,
                 NginxHost = txtHost.Text.Trim()
-            });
+            };
+
+            ProjectManager.AddOrUpdateProject(project);
+
+            if (chkSetupDomain.Checked && !string.IsNullOrWhiteSpace(project.NginxHost))
+            {
+                var siteResult = await NginxSiteGenerator.CreateOrUpdateSiteAsync(project);
+                if (!siteResult.Success)
+                {
+                    MessageBox.Show(siteResult.Message, "Nginx / Domain Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
 
             RefreshProjectsGrid();
+            RefreshHostsGrid();
         };
 
-        dlg.Controls.Add(lbl1); dlg.Controls.Add(txtName);
-        dlg.Controls.Add(lbl2); dlg.Controls.Add(txtPath); dlg.Controls.Add(btnBrowse);
-        dlg.Controls.Add(lbl3); dlg.Controls.Add(txtCmd);
-        dlg.Controls.Add(lbl4); dlg.Controls.Add(txtHost);
-        dlg.Controls.Add(btnSave);
+        var btnCancel = new Button
+        {
+            Text = "Cancel",
+            Location = new Point(290, 280),
+            Width = 90,
+            Height = 32,
+            FlatStyle = FlatStyle.Standard,
+            DialogResult = DialogResult.Cancel
+        };
+
+        dlg.Controls.Add(lblPath); dlg.Controls.Add(txtPath); dlg.Controls.Add(btnBrowse);
+        dlg.Controls.Add(btnDetect);
+        dlg.Controls.Add(lblName); dlg.Controls.Add(txtName);
+        dlg.Controls.Add(lblFw); dlg.Controls.Add(cboFw); dlg.Controls.Add(lblPublic); dlg.Controls.Add(txtPublic);
+        dlg.Controls.Add(lblCmd); dlg.Controls.Add(txtCmd); dlg.Controls.Add(lblPort); dlg.Controls.Add(txtPort);
+        dlg.Controls.Add(lblHost); dlg.Controls.Add(txtHost);
+        dlg.Controls.Add(chkSetupDomain);
+        dlg.Controls.Add(btnSave); dlg.Controls.Add(btnCancel);
+
+        dlg.AcceptButton = btnSave;
+        dlg.CancelButton = btnCancel;
 
         dlg.ShowDialog(this);
     }
@@ -1305,66 +1528,79 @@ public partial class Form1 : Form
         dlg.ShowDialog(this);
     }
 
-    // TAB 4: PHP & NGINX CONFIG
+    // TAB 4: PHP & NGINX CONFIG (V2)
     private TabPage CreateConfigTab()
     {
-        var tab = new TabPage("PHP & Nginx Config") { BackColor = SystemColors.Control };
+        var tab = new TabPage("PHP & Nginx Config") { BackColor = SystemColors.Control, AutoScroll = true };
 
+        // 1. PHP Core Settings
         var pnlPhp = new GroupBox
         {
-            Text = "PHP Configuration (php.ini)",
-            Size = new Size(500, 330),
+            Text = "PHP Core Configuration (php.ini)",
+            Size = new Size(500, 270),
             Location = new Point(15, 15),
             ForeColor = SystemColors.ControlText
         };
 
-        var lblPath = new Label { Text = $"Path: {PhpConfigManager.GetIniPath()}", Location = new Point(15, 25), AutoSize = true, ForeColor = SystemColors.ControlDarkDark };
+        var lblPath = new Label { Text = $"Path: {PhpConfigManager.GetIniPath()}", Location = new Point(15, 22), AutoSize = true, ForeColor = SystemColors.ControlDarkDark };
 
-        var l1 = new Label { Text = "memory_limit:", Location = new Point(15, 60), AutoSize = true };
-        _phpMemoryLimit = new TextBox { Location = new Point(160, 58), Width = 150, BorderStyle = BorderStyle.Fixed3D };
+        var l1 = new Label { Text = "memory_limit:", Location = new Point(15, 50), AutoSize = true };
+        _phpMemoryLimit = new TextBox { Location = new Point(150, 48), Width = 140, BorderStyle = BorderStyle.Fixed3D };
 
-        var l2 = new Label { Text = "upload_max_filesize:", Location = new Point(15, 95), AutoSize = true };
-        _phpUploadMax = new TextBox { Location = new Point(160, 93), Width = 150, BorderStyle = BorderStyle.Fixed3D };
+        var l2 = new Label { Text = "upload_max_filesize:", Location = new Point(15, 80), AutoSize = true };
+        _phpUploadMax = new TextBox { Location = new Point(150, 78), Width = 140, BorderStyle = BorderStyle.Fixed3D };
 
-        var l3 = new Label { Text = "post_max_size:", Location = new Point(15, 130), AutoSize = true };
-        _phpPostMax = new TextBox { Location = new Point(160, 128), Width = 150, BorderStyle = BorderStyle.Fixed3D };
+        var l3 = new Label { Text = "post_max_size:", Location = new Point(15, 110), AutoSize = true };
+        _phpPostMax = new TextBox { Location = new Point(150, 108), Width = 140, BorderStyle = BorderStyle.Fixed3D };
 
-        var l4 = new Label { Text = "max_execution_time:", Location = new Point(15, 165), AutoSize = true };
-        _phpMaxExec = new TextBox { Location = new Point(160, 163), Width = 150, BorderStyle = BorderStyle.Fixed3D };
+        var l4 = new Label { Text = "max_execution_time:", Location = new Point(15, 140), AutoSize = true };
+        _phpMaxExec = new TextBox { Location = new Point(150, 138), Width = 140, BorderStyle = BorderStyle.Fixed3D };
 
-        var btnLoadPhp = new Button { Text = "Read INI", Location = new Point(15, 230), Width = 90, Height = 28, FlatStyle = FlatStyle.Standard };
-        btnLoadPhp.Click += (s, e) => LoadPhpIniValues();
+        var l5 = new Label { Text = "date.timezone:", Location = new Point(15, 170), AutoSize = true };
+        _phpTimezone = new TextBox { Location = new Point(150, 168), Width = 140, BorderStyle = BorderStyle.Fixed3D };
 
-        var btnSavePhp = new Button { Text = "Save php.ini", Location = new Point(115, 230), Width = 110, Height = 28, FlatStyle = FlatStyle.Standard };
+        var btnSavePhp = new Button { Text = "Save php.ini", Location = new Point(15, 215), Width = 100, Height = 28, FlatStyle = FlatStyle.Standard, Cursor = Cursors.Hand };
         btnSavePhp.Click += (s, e) => SavePhpIniValues();
 
-        var btnOpenPhpNotepad = new Button 
-        { 
-            Text = "📝 Edit in Notepad", 
-            Location = new Point(235, 230), 
-            Width = 130, 
-            Height = 28, 
-            FlatStyle = FlatStyle.Standard,
-            Cursor = Cursors.Hand 
+        var btnDevPreset = new Button { Text = "Dev Preset", Location = new Point(125, 215), Width = 90, Height = 28, FlatStyle = FlatStyle.Standard, Cursor = Cursors.Hand };
+        btnDevPreset.Click += (s, e) =>
+        {
+            var res = PhpConfigManager.ApplyPreset("development");
+            if (res.Success)
+            {
+                MessageBox.Show($"Development preset applied!\n\nDiff preview:\n{res.Diff}", "Preset Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadPhpIniValues();
+            }
+            else
+            {
+                MessageBox.Show(res.Message, "Error Applying Preset", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         };
+
+        var btnProdPreset = new Button { Text = "Prod Preset", Location = new Point(225, 215), Width = 90, Height = 28, FlatStyle = FlatStyle.Standard, Cursor = Cursors.Hand };
+        btnProdPreset.Click += (s, e) =>
+        {
+            var res = PhpConfigManager.ApplyPreset("production");
+            if (res.Success)
+            {
+                MessageBox.Show($"Production preset applied!\n\nDiff preview:\n{res.Diff}", "Preset Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadPhpIniValues();
+            }
+            else
+            {
+                MessageBox.Show(res.Message, "Error Applying Preset", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
+
+        var btnOpenPhpNotepad = new Button { Text = "📝 Notepad", Location = new Point(325, 215), Width = 90, Height = 28, FlatStyle = FlatStyle.Standard, Cursor = Cursors.Hand };
         btnOpenPhpNotepad.Click += (s, e) =>
         {
             try
             {
                 string iniPath = PhpConfigManager.GetIniPath();
-                if (File.Exists(iniPath))
-                {
-                    System.Diagnostics.Process.Start("notepad.exe", iniPath);
-                }
-                else
-                {
-                    MessageBox.Show($"php.ini not found at {iniPath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                if (File.Exists(iniPath)) System.Diagnostics.Process.Start("notepad.exe", iniPath);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to open Notepad: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch (Exception ex) { MessageBox.Show(ex.Message); }
         };
 
         pnlPhp.Controls.Add(lblPath);
@@ -1372,37 +1608,156 @@ public partial class Form1 : Form
         pnlPhp.Controls.Add(l2); pnlPhp.Controls.Add(_phpUploadMax);
         pnlPhp.Controls.Add(l3); pnlPhp.Controls.Add(_phpPostMax);
         pnlPhp.Controls.Add(l4); pnlPhp.Controls.Add(_phpMaxExec);
-        pnlPhp.Controls.Add(btnLoadPhp); pnlPhp.Controls.Add(btnSavePhp);
-        pnlPhp.Controls.Add(btnOpenPhpNotepad);
+        pnlPhp.Controls.Add(l5); pnlPhp.Controls.Add(_phpTimezone);
+        pnlPhp.Controls.Add(btnSavePhp); pnlPhp.Controls.Add(btnDevPreset);
+        pnlPhp.Controls.Add(btnProdPreset); pnlPhp.Controls.Add(btnOpenPhpNotepad);
 
-        // Nginx Manager Group Box
+        // 2. PHP FastCGI Pool Settings
+        var pnlPhpPool = new GroupBox
+        {
+            Text = "PHP FastCGI Pool & Upstream",
+            Size = new Size(500, 270),
+            Location = new Point(530, 15),
+            ForeColor = SystemColors.ControlText
+        };
+
+        var lblPoolDesc = new Label
+        {
+            Text = "Windows php-cgi is single-threaded. Spawning multiple pool workers\neliminates concurrent request blocking in local web development.",
+            Location = new Point(15, 25),
+            Size = new Size(465, 35)
+        };
+
+        var lblPoolSize = new Label { Text = "Pool Size (Workers):", Location = new Point(15, 75), AutoSize = true };
+        _numPhpPoolSize = new NumericUpDown
+        {
+            Location = new Point(160, 73),
+            Width = 70,
+            Minimum = 1,
+            Maximum = 8,
+            Value = PhpPoolManager.PoolSize,
+            BorderStyle = BorderStyle.Fixed3D
+        };
+
+        var lblBasePort = new Label { Text = "Base Port: 9000 (workers listen on ports 9000..900N)", Location = new Point(15, 110), AutoSize = true, ForeColor = SystemColors.ControlDarkDark };
+        var lblUpstreamTarget = new Label { Text = "Nginx Upstream Target: 'php_pool' (conf/upstream_php.conf)", Location = new Point(15, 135), AutoSize = true, ForeColor = SystemColors.ControlDarkDark };
+
+        var btnSavePool = new Button
+        {
+            Text = "Save Upstream Config",
+            Location = new Point(15, 185),
+            Size = new Size(160, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnSavePool.Click += (s, e) =>
+        {
+            int size = (int)_numPhpPoolSize.Value;
+            PhpPoolManager.PoolSize = size;
+            PhpPoolManager.SaveUpstreamConfig(size);
+            MessageBox.Show($"Upstream block 'php_pool' generated with {size} worker servers.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
+
+        pnlPhpPool.Controls.Add(lblPoolDesc);
+        pnlPhpPool.Controls.Add(lblPoolSize);
+        pnlPhpPool.Controls.Add(_numPhpPoolSize);
+        pnlPhpPool.Controls.Add(lblBasePort);
+        pnlPhpPool.Controls.Add(lblUpstreamTarget);
+        pnlPhpPool.Controls.Add(btnSavePool);
+
+        // 3. PHP Dynamic Extensions Manager
+        var pnlExt = new GroupBox
+        {
+            Text = "PHP Dynamic Extensions (ext/*.dll)",
+            Size = new Size(500, 310),
+            Location = new Point(15, 300),
+            ForeColor = SystemColors.ControlText
+        };
+
+        _lstPhpExtensions = new CheckedListBox
+        {
+            Location = new Point(15, 25),
+            Size = new Size(470, 220),
+            BorderStyle = BorderStyle.Fixed3D,
+            CheckOnClick = true,
+            MultiColumn = true,
+            ColumnWidth = 145
+        };
+
+        var btnApplyExts = new Button
+        {
+            Text = "Apply Extensions",
+            Location = new Point(15, 260),
+            Size = new Size(130, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnApplyExts.Click += (s, e) => SavePhpExtensions();
+
+        var btnCommonExts = new Button
+        {
+            Text = "Enable Common",
+            Location = new Point(155, 260),
+            Size = new Size(120, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnCommonExts.Click += (s, e) =>
+        {
+            var common = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "curl", "fileinfo", "gd", "intl", "mbstring", "openssl", "pdo_mysql", "zip" };
+            for (int i = 0; i < _lstPhpExtensions.Items.Count; i++)
+            {
+                string name = _lstPhpExtensions.Items[i]?.ToString() ?? "";
+                if (common.Contains(name))
+                {
+                    _lstPhpExtensions.SetItemChecked(i, true);
+                }
+            }
+        };
+
+        var btnRefreshExts = new Button
+        {
+            Text = "🔄 Refresh Exts",
+            Location = new Point(285, 260),
+            Size = new Size(110, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnRefreshExts.Click += (s, e) => LoadPhpExtensions();
+
+        pnlExt.Controls.Add(_lstPhpExtensions);
+        pnlExt.Controls.Add(btnApplyExts);
+        pnlExt.Controls.Add(btnCommonExts);
+        pnlExt.Controls.Add(btnRefreshExts);
+
+        // 4. Nginx Server & Error Log
         var pnlNginx = new GroupBox
         {
-            Text = "Nginx Web Server Operations",
-            Size = new Size(500, 330),
-            Location = new Point(530, 15),
+            Text = "Nginx Server & Error Log",
+            Size = new Size(500, 310),
+            Location = new Point(530, 300),
             ForeColor = SystemColors.ControlText
         };
 
         var btnTestNginx = new Button
         {
-            Text = "🧪 Validate Syntax (nginx -t)",
-            Location = new Point(25, 35),
-            Size = new Size(240, 30),
+            Text = "🧪 Validate (nginx -t)",
+            Location = new Point(15, 25),
+            Size = new Size(150, 26),
             FlatStyle = FlatStyle.Standard,
             Cursor = Cursors.Hand
         };
         btnTestNginx.Click += (s, e) =>
         {
             var res = NginxManager.ValidateConfig();
-            MessageBox.Show(res.Output, res.Success ? "Nginx Config Test Passed" : "Nginx Config Test Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+            MessageBox.Show(res.Output, res.Success ? "Config Test Passed" : "Config Test Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         };
 
         var btnReloadNginx = new Button
         {
-            Text = "⚡ Reload Nginx (nginx -s reload)",
-            Location = new Point(25, 75),
-            Size = new Size(240, 30),
+            Text = "⚡ Reload Nginx",
+            Location = new Point(175, 25),
+            Size = new Size(140, 26),
             FlatStyle = FlatStyle.Standard,
             Cursor = Cursors.Hand
         };
@@ -1412,65 +1767,57 @@ public partial class Form1 : Form
             MessageBox.Show(res.Output, res.Success ? "Nginx Reload Success" : "Nginx Reload Failed", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         };
 
-        var btnOpenNginxNotepad = new Button
-        {
-            Text = "📝 Edit nginx.conf in Notepad",
-            Location = new Point(25, 120),
-            Size = new Size(240, 30),
-            FlatStyle = FlatStyle.Standard,
-            Cursor = Cursors.Hand
-        };
-        btnOpenNginxNotepad.Click += (s, e) =>
-        {
-            try
-            {
-                string confPath = @"C:\tools\nginx\conf\nginx.conf";
-                if (File.Exists(confPath))
-                {
-                    System.Diagnostics.Process.Start("notepad.exe", confPath);
-                }
-                else
-                {
-                    MessageBox.Show($"nginx.conf not found at {confPath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to open Notepad: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        };
-
         var btnOpenSitesFolder = new Button
         {
-            Text = "📁 Open Sites Config Folder",
-            Location = new Point(25, 165),
-            Size = new Size(240, 30),
+            Text = "📁 Sites Folder",
+            Location = new Point(325, 25),
+            Size = new Size(150, 26),
             FlatStyle = FlatStyle.Standard,
             Cursor = Cursors.Hand
         };
         btnOpenSitesFolder.Click += (s, e) =>
         {
-            try
-            {
-                string sitesFolder = @"C:\tools\nginx\conf\sites\";
-                Directory.CreateDirectory(sitesFolder);
-                System.Diagnostics.Process.Start("explorer.exe", sitesFolder);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to open sites folder: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            string sitesFolder = NginxSiteGenerator.GetSitesDirectory();
+            System.Diagnostics.Process.Start("explorer.exe", sitesFolder);
         };
+
+        var lblLogTitle = new Label { Text = "Error Log (Tail 30 lines):", Location = new Point(15, 65), AutoSize = true, ForeColor = SystemColors.ControlDarkDark };
+
+        _txtNginxErrorLog = new RichTextBox
+        {
+            Location = new Point(15, 88),
+            Size = new Size(470, 160),
+            BackColor = SystemColors.Window,
+            ForeColor = SystemColors.WindowText,
+            BorderStyle = BorderStyle.Fixed3D,
+            Font = new Font("Consolas", 8.25F),
+            ReadOnly = true
+        };
+
+        var btnRefreshLog = new Button
+        {
+            Text = "🔄 Refresh Log",
+            Location = new Point(15, 260),
+            Size = new Size(120, 28),
+            FlatStyle = FlatStyle.Standard,
+            Cursor = Cursors.Hand
+        };
+        btnRefreshLog.Click += (s, e) => RefreshNginxLog();
 
         pnlNginx.Controls.Add(btnTestNginx);
         pnlNginx.Controls.Add(btnReloadNginx);
-        pnlNginx.Controls.Add(btnOpenNginxNotepad);
         pnlNginx.Controls.Add(btnOpenSitesFolder);
+        pnlNginx.Controls.Add(lblLogTitle);
+        pnlNginx.Controls.Add(_txtNginxErrorLog);
+        pnlNginx.Controls.Add(btnRefreshLog);
 
         tab.Controls.Add(pnlPhp);
+        tab.Controls.Add(pnlPhpPool);
+        tab.Controls.Add(pnlExt);
         tab.Controls.Add(pnlNginx);
 
         LoadPhpIniValues();
+        RefreshNginxLog();
 
         return tab;
     }
@@ -1481,6 +1828,8 @@ public partial class Form1 : Form
         _phpUploadMax.Text = PhpConfigManager.GetSettingValue("upload_max_filesize");
         _phpPostMax.Text = PhpConfigManager.GetSettingValue("post_max_size");
         _phpMaxExec.Text = PhpConfigManager.GetSettingValue("max_execution_time");
+        _phpTimezone.Text = PhpConfigManager.GetSettingValue("date.timezone");
+        LoadPhpExtensions();
     }
 
     private void SavePhpIniValues()
@@ -1489,7 +1838,46 @@ public partial class Form1 : Form
         PhpConfigManager.UpdateSetting("upload_max_filesize", _phpUploadMax.Text.Trim());
         PhpConfigManager.UpdateSetting("post_max_size", _phpPostMax.Text.Trim());
         PhpConfigManager.UpdateSetting("max_execution_time", _phpMaxExec.Text.Trim());
+        if (!string.IsNullOrWhiteSpace(_phpTimezone.Text))
+        {
+            PhpConfigManager.UpdateSetting("date.timezone", _phpTimezone.Text.Trim());
+        }
         MessageBox.Show("php.ini settings saved with backup!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void LoadPhpExtensions()
+    {
+        if (_lstPhpExtensions == null) return;
+        _lstPhpExtensions.Items.Clear();
+
+        var exts = PhpConfigManager.GetAvailableExtensions();
+        foreach (var ext in exts)
+        {
+            _lstPhpExtensions.Items.Add(ext.Name, ext.IsEnabled);
+        }
+    }
+
+    private void SavePhpExtensions()
+    {
+        if (_lstPhpExtensions == null) return;
+        for (int i = 0; i < _lstPhpExtensions.Items.Count; i++)
+        {
+            string name = _lstPhpExtensions.Items[i]?.ToString() ?? "";
+            bool isChecked = _lstPhpExtensions.GetItemChecked(i);
+            PhpConfigManager.ToggleExtension(name, isChecked);
+        }
+        MessageBox.Show("PHP extensions configuration updated successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void RefreshNginxLog()
+    {
+        if (_txtNginxErrorLog == null) return;
+        var lines = NginxManager.TailErrorLog(30);
+        _txtNginxErrorLog.Text = lines.Count > 0
+            ? string.Join(Environment.NewLine, lines)
+            : "[No error logs recorded or file is empty]";
+        _txtNginxErrorLog.SelectionStart = _txtNginxErrorLog.Text.Length;
+        _txtNginxErrorLog.ScrollToCaret();
     }
 
     // TAB 6: DIAGNOSTICS & SYSTEM AUDIT

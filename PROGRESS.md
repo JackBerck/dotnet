@@ -1,7 +1,7 @@
 # PROGRESS TRACKING — Dotnet (Standalone Dev Manager)
 
 > Sinkronisasi otomatis dengan [`PROJECT-SPEC.md`](PROJECT-SPEC.md).
-> Terakhir diperbarui: **2026-09-22** (Pasca Update 4 / Fase 3 MVP).
+> Terakhir diperbarui: **2026-09-23** (Pasca Update 5 / Fase 4 MVP).
 
 ---
 
@@ -13,7 +13,7 @@
 | **Fase 1** | Stabilkan Inti (P0 & Fondasi Keamanan) | 🟢 **Selesai** | 90% |
 | **Fase 2** | Catalog & Installer Tool (Node, PHP, MinGit, Nginx, Composer, Bun, Go) | 🟢 **MVP Selesai** | 90% |
 | **Fase 3** | Runtime Terintegrasi, Tray & Profile | 🟢 **MVP Selesai** | 95% |
-| **Fase 4** | Konfigurasi & Project Manager v2 | ⚪ Belum Dimulai | 0% |
+| **Fase 4** | Konfigurasi & Project Manager v2 | 🟢 **MVP Selesai** | 95% |
 | **Fase 5** | Database Portable & Perluasan (Docker v2) | ⚪ Belum Dimulai | 0% |
 | **Fase 6** | Rilis, Installer & Distribusi | ⚪ Belum Dimulai | 0% |
 
@@ -89,6 +89,13 @@
 - [x] **T3-5:** Port Monitor snapshot (`GetAllActiveTcpListeners`) & PATH shadow analysis di tab diagnostics.
 - [x] **T3-6:** Tray menu dinamis (ganti profil, status layanan realtime, exit policy dialog pencegah proses orphan per D7).
 
+### Fase 4 — Konfigurasi & Project Manager v2 (MVP Selesai)
+- [x] **T4-1:** Skema-driven config generator (`ConfigSchema.cs`, `ConfigSchemaStore.cs`, `PhpConfigManager.cs` dynamic `ext/*.dll` scanner + preset diff, `CliConfigManager.cs` untuk Git & npm).
+- [x] **T4-2:** Project Manager v2 (`FrameworkDetector.cs` untuk Laravel, Next.js, Vite, PHP, Node, Static; non-elevated command runner; Windows Terminal `wt.exe` / `cmd.exe` & VS Code launcher).
+- [x] **T4-3:** Nginx Site Generator (`NginxSiteGenerator.cs` vhost di `%LOCALAPPDATA%\Dotnet\nginx\sites\`, 1-click domain `.test`, auto include injection di `nginx.conf`, rollback saat `nginx -t` gagal, auto hosts file mapping, error log viewer 30-line tail).
+- [x] **T4-4:** PHP FastCGI Pool Manager (`PhpPoolManager.cs` multi-worker sequential ports 9000..900N, auto Nginx `upstream php_pool` generator).
+- [x] **T4-5:** Tab UI **Projects** v2 (split-view grid, toolbar Add/Auto-detect/Run/Domain/Terminal/VSCode/Browser/Delete, 1-click dialog domain) & Tab **Config** v2 (PHP limits, presets, dynamic extensions checklist, fastcgi pool size, nginx test & reload).
+
 ---
 
 ## Log Riwayat Update
@@ -97,3 +104,5 @@
 - **Update 2 (`055af5c`):** `IniDocument` parser murni, Hosts Managed Block marker, status service akurat (`NotInstalled`), `JsonStore` atomik + `schemaVersion`, Safe async Nginx, restyle UI classic Win7/XP (`STYLE-SPEC.md`), setup project `Dotnet.Core.Tests` (12 passing tests).
 - **Update 3 (`632e1d7`):** Tool Catalog & Installer MVP. Manifest deklaratif ter-embed (PHP, Node, Composer, Git, Nginx, Bun, Go), `SafeExtractor` (anti zip-slip/bomb), `ToolDownloader` (SHA-256), `EnvironmentService` (User PATH `REG_EXPAND_SZ` + `WM_SETTINGCHANGE`), `InstalledToolStore`, `AdoptExistingScanner`, `JunctionManager`, tab WinForms "Tools & Packages" classic style, 20 unit tests lolos.
 - **Update 4 (Fase 3):** Runtime terintegrasi & profile system (`standalone` vs `docker`), `ServiceOrchestrator` start/stop ordered, `ProcessTracker` re-adopsi proses eksisting (F-15) + crash detection, `TaskSchedulerManager` elevated logon autostart (F-10), Port Monitor snapshot & PATH shadow analyzer di Tab Diagnostics, Exit Policy dialog (D7), 27 unit tests lolos.
+- **Update 5 (Fase 4):** Konfigurasi & Project Manager v2. Schema config generator (`ConfigSchema`), dynamic PHP extensions scanner & diff preset, async `git config`/`npm config`, `FrameworkDetector` (Laravel, Next.js, Vite, Node, Static), terminal & VS Code runner, `NginxSiteGenerator` dengan vhost di `%LOCALAPPDATA%\Dotnet\nginx\sites\` + auto include + hosts file mapping + atomic rollback, `PhpPoolManager` multi-worker FastCGI upstream, UI modern legacy Win7/XP untuk Tab Projects v2 dan Tab Config v2, 36 unit tests lolos (0 warnings, 0 errors).
+

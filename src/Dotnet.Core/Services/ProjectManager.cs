@@ -1,43 +1,60 @@
 using System.Diagnostics;
-using System.Text.Json;
 using dotnet.Models;
+using dotnet.Persistence;
 
 namespace dotnet.Services;
 
 public class ProjectManager
 {
-    private static readonly string ProjectsFilePath = dotnet.Persistence.AppPaths.GetPath("projects.json");
-    private static List<ProjectInfo> Projects = new();
+    private static readonly string ProjectsFilePath = AppPaths.GetPath(Path.Combine("state", "projects.json"));
+    private static readonly string LegacyProjectsFilePath = AppPaths.GetPath("projects.json");
+    private static List<ProjectInfo> _projects = new();
 
     static ProjectManager()
     {
         LoadProjects();
     }
 
-    public static List<ProjectInfo> GetProjects() => Projects;
+    public static List<ProjectInfo> GetProjects() => _projects;
 
     public static void LoadProjects()
     {
-        var doc = dotnet.Persistence.JsonStore.Load<List<ProjectInfo>>(ProjectsFilePath);
-        Projects = doc?.Data ?? new List<ProjectInfo>();
+        if (!File.Exists(ProjectsFilePath) && File.Exists(LegacyProjectsFilePath))
+        {
+            try
+            {
+                var legacyDoc = JsonStore.Load<List<ProjectInfo>>(LegacyProjectsFilePath);
+                if (legacyDoc?.Data != null)
+                {
+                    _projects = legacyDoc.Data;
+                    SaveProjects();
+                    AppLogger.Log("Migrated legacy projects.json to state/ directory.");
+                    return;
+                }
+            }
+            catch { }
+        }
+
+        var doc = JsonStore.Load<List<ProjectInfo>>(ProjectsFilePath);
+        _projects = doc?.Data ?? new List<ProjectInfo>();
     }
 
     public static void SaveProjects()
     {
-        dotnet.Persistence.JsonStore.Save(ProjectsFilePath, Projects, schemaVersion: 1);
+        JsonStore.Save(ProjectsFilePath, _projects, schemaVersion: 2);
     }
 
     public static void AddOrUpdateProject(ProjectInfo project)
     {
-        var existing = Projects.FirstOrDefault(p => p.Id == project.Id);
+        var existing = _projects.FirstOrDefault(p => p.Id == project.Id);
         if (existing != null)
         {
-            int index = Projects.IndexOf(existing);
-            Projects[index] = project;
+            int index = _projects.IndexOf(existing);
+            _projects[index] = project;
         }
         else
         {
-            Projects.Add(project);
+            _projects.Add(project);
         }
 
         SaveProjects();
@@ -46,7 +63,7 @@ public class ProjectManager
 
     public static void DeleteProject(string id)
     {
-        Projects.RemoveAll(p => p.Id == id);
+        _projects.RemoveAll(p => p.Id == id);
         SaveProjects();
         AppLogger.Log($"Deleted project ID: {id}");
     }
@@ -58,6 +75,12 @@ public class ProjectManager
             if (!Directory.Exists(project.Path))
             {
                 AppLogger.Log($"Directory not found: {project.Path}");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(project.DevCommand))
+            {
+                AppLogger.Log($"No dev command configured for {project.Name}.");
                 return;
             }
 
@@ -97,9 +120,24 @@ public class ProjectManager
     {
         try
         {
+            if (!Directory.Exists(path)) return;
+
+            string wtPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Microsoft\WindowsApps\wt.exe");
+            if (File.Exists(wtPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = wtPath,
+                    Arguments = $"-d \"{path}\"",
+                    UseShellExecute = true
+                });
+                return;
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
+                Arguments = $"-NoExit -Command \"Set-Location '{path}'\"",
                 WorkingDirectory = path,
                 UseShellExecute = true
             };
@@ -108,6 +146,43 @@ public class ProjectManager
         catch (Exception ex)
         {
             AppLogger.Log($"Failed to open terminal: {ex.Message}");
+        }
+    }
+
+    public static void OpenInVSCode(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) return;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "code.cmd",
+                Arguments = $".",
+                WorkingDirectory = path,
+                UseShellExecute = true,
+                CreateNoWindow = true
+            };
+            Process.Start(psi);
+            AppLogger.Log($"Opened VS Code at {path}");
+        }
+        catch
+        {
+            // Fallback to code.exe
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "code.exe",
+                    Arguments = $".",
+                    WorkingDirectory = path,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"VS Code not found in PATH: {ex.Message}");
+            }
         }
     }
 
@@ -137,7 +212,7 @@ public class ProjectManager
         {
             if (!string.IsNullOrWhiteSpace(host))
             {
-                string url = host.StartsWith("http") ? host : $"http://{host}";
+                string url = host.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? host : $"http://{host}";
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = url,
