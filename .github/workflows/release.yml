@@ -25,19 +25,57 @@ jobs:
       run: |
         dotnet publish src/Dotnet.App/Dotnet.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o bin/publish
 
-    - name: Build Portable Archive & Checksums
+    - name: Build Portable Archive & Copy Raw Binary
       shell: pwsh
       run: |
         $version = "${{ github.ref_name }}".TrimStart('v')
         $zipName = "Dotnet-v$version-win-x64-portable.zip"
         Compress-Archive -Path "bin/publish/*" -DestinationPath $zipName
-        $hash = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash
-        "$hash  $zipName" | Out-File -FilePath SHA256SUMS.txt -Encoding utf8
+        Copy-Item -Path "bin/publish/Dotnet.App.exe" -Destination "Dotnet-v$version-win-x64.exe"
+
+    - name: Compile Inno Setup Installer
+      shell: pwsh
+      run: |
+        choco install innosetup --no-progress
+        $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+        & $iscc packaging/DotnetSetup.iss
+
+    - name: Generate Checksums
+      shell: pwsh
+      run: |
+        $version = "${{ github.ref_name }}".TrimStart('v')
+        $files = @(
+            "Dotnet-v$version-win-x64-portable.zip",
+            "Dotnet-v$version-win-x64.exe",
+            "artifacts/DotnetSetup-$version.exe"
+        )
+        $lines = @()
+        foreach ($f in $files) {
+            if (Test-Path $f) {
+                $hash = (Get-FileHash -Path $f -Algorithm SHA256).Hash
+                $lines += "$hash  $(Split-Path -Leaf $f)"
+            }
+        }
+        $lines | Out-File -FilePath SHA256SUMS.txt -Encoding utf8
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
+        name: "Dotnet DevManager ${{ github.ref_name }}"
+        body: |
+          ## Dotnet DevManager ${{ github.ref_name }}
+          Native Windows developer environment manager (open-source Laragon replacement).
+
+          ### 📦 Release Assets
+          - **Installer (.exe):** `DotnetSetup-*.exe` — User-space setup wizard (Start Menu & Desktop shortcuts).
+          - **Standalone Binary (.exe):** `Dotnet-*-win-x64.exe` — Self-contained single-file executable (no runtime required).
+          - **Portable Zip (.zip):** `Dotnet-*-win-x64-portable.zip` — Extract and run anywhere.
+          - **Checksums:** `SHA256SUMS.txt` — SHA-256 verification hashes.
+
+          ### 🚀 What's New
         files: |
           Dotnet-*.zip
+          Dotnet-*.exe
+          artifacts/DotnetSetup-*.exe
           SHA256SUMS.txt
         generate_release_notes: true
