@@ -383,6 +383,20 @@ public partial class Form1 : Form
         };
         btnRefresh.Click += (s, e) => RefreshServicesStatus();
 
+        var btnAbout = new Button
+        {
+            Text = "ℹ️ About",
+            FlatStyle = FlatStyle.Standard,
+            Size = new Size(68, 28),
+            Location = new Point(1010, 13),
+            Cursor = Cursors.Hand
+        };
+        btnAbout.Click += (s, e) =>
+        {
+            using var dlg = new AboutDialog();
+            dlg.ShowDialog(this);
+        };
+
         headerPanel.Controls.Add(titleLabel);
         headerPanel.Controls.Add(_adminStatusLabel);
         headerPanel.Controls.Add(lblProfile);
@@ -391,6 +405,7 @@ public partial class Form1 : Form
         headerPanel.Controls.Add(btnStartAll);
         headerPanel.Controls.Add(btnStopAll);
         headerPanel.Controls.Add(btnRefresh);
+        headerPanel.Controls.Add(btnAbout);
 
         // Bottom Log Panel
         var logPanel = new Panel

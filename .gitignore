@@ -9,3 +9,6 @@ obj/
 
 # Application Logs
 *.log
+
+# Build & Release Artifacts
+artifacts/

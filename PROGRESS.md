@@ -1,7 +1,7 @@
 # PROGRESS TRACKING — Dotnet (Standalone Dev Manager)
 
 > Sinkronisasi otomatis dengan [`PROJECT-SPEC.md`](PROJECT-SPEC.md).
-> Terakhir diperbarui: **2026-09-23** (Pasca Update 6 / Fase 5 MVP).
+> Terakhir diperbarui: **2026-09-24** (Pasca Update 7 / Fase 6 Selesai).
 
 ---
 
@@ -9,13 +9,14 @@
 
 | Fase | Deskripsi | Status | Progress |
 |---|---|---|---|
-| **Fase 0** | Fondasi Repo & Arsitektur Solusi | 🟡 Sedang Berjalan | 85% |
-| **Fase 1** | Stabilkan Inti (P0 & Fondasi Keamanan) | 🟢 **Selesai** | 90% |
-| **Fase 2** | Catalog & Installer Tool (Node, PHP, MinGit, Nginx, Composer, Bun, Go) | 🟢 **MVP Selesai** | 90% |
-| **Fase 3** | Runtime Terintegrasi, Tray & Profile | 🟢 **MVP Selesai** | 95% |
-| **Fase 4** | Konfigurasi & Project Manager v2 | 🟢 **MVP Selesai** | 95% |
-| **Fase 5** | Database Portable & Perluasan (Docker v2) | 🟢 **MVP Selesai** | 90% |
-| **Fase 6** | Rilis, Installer & Distribusi | ⚪ Belum Dimulai | 0% |
+| **Fase 0** | Fondasi Repo & Arsitektur Solusi | 🟢 **Selesai** | 100% |
+| **Fase 1** | Stabilkan Inti (P0 & Fondasi Keamanan) | 🟢 **Selesai** | 100% |
+| **Fase 2** | Catalog & Installer Tool (Node, PHP, MinGit, Nginx, Composer, Bun, Go) | 🟢 **Selesai** | 100% |
+| **Fase 3** | Runtime Terintegrasi, Tray & Profile | 🟢 **Selesai** | 100% |
+| **Fase 4** | Konfigurasi & Project Manager v2 | 🟢 **Selesai** | 100% |
+| **Fase 5** | Database Portable & Perluasan (Docker v2) | 🟢 **Selesai** | 100% |
+| **Fase 6** | Rilis, Installer & Distribusi | 🟢 **Selesai** | 100% |
+
 
 
 ---
@@ -45,23 +46,24 @@
 | **F-14** | `ServiceStatus` tidak menampilkan status NotInstalled/Conflict | ✅ **SELESAI** | Badge `⛔ NOT INSTALLED` & disable tombol di Form1 (Update 2). |
 | **F-15** | Adopsi proses eksisting tanpa restart service | ✅ **SELESAI** | `ProcessTracker` re-adopsi PID + start time + path saat startup & crash detection (Update 4). |
 | **F-16** | `NginxManager` deadlock stdout/stderr & tanpa stop graceful | ✅ **SELESAI** | Async stream timeout, exit code check, `-s quit`, tail error log (Update 2). |
+| **F-23** | `StartMenuShortcutManager` leak COM & rapuh trimming | ✅ **SELESAI** | RCW COM Object diproteksi try-finally & `Marshal.FinalReleaseComObject` (Update 7). |
 | **F-25** | Git hygiene: untrack `bin/`, `obj/`, `.user` | ✅ **SELESAI** | `.gitignore` dikonfigurasi & repo dibersihkan (Update 1). |
 | **F-29** | JSON settings ditulis non-atomik & tanpa versi skema | ✅ **SELESAI** | `JsonStore.cs` atomik (`.tmp` -> replace) + `schemaVersion` (Update 2). |
-| **STYLE**| Penyesuaian tema visual legacy Windows 7/XP | ✅ **SELESAI** | Seluruh tab & dialog (ExitPolicy, Diagnostics) mengikuti `STYLE-SPEC.md`. |
+| **STYLE**| Penyesuaian tema visual legacy Windows 7/XP | ✅ **SELESAI** | Seluruh tab & dialog (ExitPolicy, Diagnostics, About) mengikuti `STYLE-SPEC.md`. |
 
 ---
 
 ## Rincian Task Per Fase
 
-### Fase 0 — Fondasi Repo
+### Fase 0 — Fondasi Repo (Selesai)
 - [x] **T0-1:** `.gitignore`, untrack `bin/`, `obj/`, `*.user` (F-25).
 - [x] **T0-2:** `README.md` terstruktur.
 - [x] **T0-3:** Ganti nama proyek/identitas menjadi `Dotnet`.
 - [x] **T0-4:** Pecah solution: `Dotnet.Core` / `Dotnet.App` / `Dotnet.Core.Tests`.
-- [ ] **T0-5:** CI GitHub Actions `build-test.yml`.
+- [x] **T0-5:** CI GitHub Actions `build-test.yml` (Update 7).
 - [x] **T0-6:** `AppPaths` (%LOCALAPPDATA%), `JsonStore` atomik + `schemaVersion` (F-06, F-29).
 
-### Fase 1 — Stabilkan Inti
+### Fase 1 — Stabilkan Inti (Selesai)
 - [ ] **T1-1:** Abstraksi (`IFileSystem`, `IProcessRunner`), DI host, Serilog (F-18, F-20).
 - [x] **T1-2:** P/Invoke `GetExtendedTcpTable` (iphlpapi); hapus `netstat` (F-01, F-03).
 - [x] **T1-3:** Safe process stop & log output (F-02, F-04).
@@ -72,17 +74,17 @@
 - [x] **T1-8:** Lifecycle UI autostart pasca `Shown` & classic WinForms style (F-09, STYLE-SPEC).
 - [x] **T1-9:** Penentuan model elevasi & Task Scheduler autostart (F-10).
 
-### Fase 2 — Catalog & Tool Installer (MVP Selesai)
+### Fase 2 — Catalog & Tool Installer (Selesai)
 - [x] **T2-1:** Skema manifest tool (JSON) + model deklaratif `ToolDefinition`.
 - [x] **T2-2:** `ToolDownloader` (HTTPS, SHA256 stream) + `SafeExtractor` (anti zip-slip/bomb, `stripRoot`).
 - [x] **T2-3:** `InstalledToolStore` (`installed-tools.json`) + `AdoptExistingScanner` (`C:\tools\*`, NVM, PATH).
 - [x] **T2-4:** `PathEditor` (murni, teruji) + `EnvironmentService` (HKCU `REG_EXPAND_SZ`, backup, broadcast `WM_SETTINGCHANGE`).
 - [x] **T2-5:** `PostInstallRunner` (`copyIfMissing`, `iniSet`, `iniEnableExtensions`, `writeShim`) + `JunctionManager` (`current` junction).
 - [x] **T2-6:** Tab UI **Tools & Packages** di Form1 (Catalog list, Install, Uninstall, Adopt, Version switch, progress).
-- [x] **T2-7:** Manifest awal: Node.js, PHP, Composer, Git (MinGit), Nginx, Bun, Go ter-embed di assembly.
+- [x] **T2-7:** Manifest awal: Node.js, PHP, Composer, Git (MinGit), Nginx, Bun, Go, MySQL, PostgreSQL.
 - [ ] **T2-8:** Skrip sinkronisasi catalog dari upstream resmi (GitHub Actions / scheduled CI).
 
-### Fase 3 — Runtime Terintegrasi, Tray & Profile (MVP Selesai)
+### Fase 3 — Runtime Terintegrasi, Tray & Profile (Selesai)
 - [x] **T3-1:** `ServiceProfile` & `ProfileStore` (`profiles.json`) untuk switch profil (`standalone` vs `docker`).
 - [x] **T3-2:** `ServiceOrchestrator` untuk dependency-aware start (database -> web server) & stop order.
 - [x] **T3-3:** `ProcessTracker` (persistensi `running-processes.json`, re-adopsi proses startup F-15, crash detection).
@@ -90,20 +92,28 @@
 - [x] **T3-5:** Port Monitor snapshot (`GetAllActiveTcpListeners`) & PATH shadow analysis di tab diagnostics.
 - [x] **T3-6:** Tray menu dinamis (ganti profil, status layanan realtime, exit policy dialog pencegah proses orphan per D7).
 
-### Fase 4 — Konfigurasi & Project Manager v2 (MVP Selesai)
+### Fase 4 — Konfigurasi & Project Manager v2 (Selesai)
 - [x] **T4-1:** Skema-driven config generator (`ConfigSchema.cs`, `ConfigSchemaStore.cs`, `PhpConfigManager.cs` dynamic `ext/*.dll` scanner + preset diff, `CliConfigManager.cs` untuk Git & npm).
 - [x] **T4-2:** Project Manager v2 (`FrameworkDetector.cs` untuk Laravel, Next.js, Vite, PHP, Node, Static; non-elevated command runner; Windows Terminal `wt.exe` / `cmd.exe` & VS Code launcher).
 - [x] **T4-3:** Nginx Site Generator (`NginxSiteGenerator.cs` vhost di `%LOCALAPPDATA%\Dotnet\nginx\sites\`, 1-click domain `.test`, auto include injection di `nginx.conf`, rollback saat `nginx -t` gagal, auto hosts file mapping, error log viewer 30-line tail).
 - [x] **T4-4:** PHP FastCGI Pool Manager (`PhpPoolManager.cs` multi-worker sequential ports 9000..900N, auto Nginx `upstream php_pool` generator).
 - [x] **T4-5:** Tab UI **Projects** v2 (split-view grid, toolbar Add/Auto-detect/Run/Domain/Terminal/VSCode/Browser/Delete, 1-click dialog domain) & Tab **Config** v2 (PHP limits, presets, dynamic extensions checklist, fastcgi pool size, nginx test & reload).
 
-### Fase 5 — Database Portable & Perluasan (Docker v2) (MVP Selesai)
+### Fase 5 — Database Portable & Perluasan (Docker v2) (Selesai)
 - [x] **T5-1:** Portable Database Initializer (`DatabaseInitializer.cs` untuk MySQL `mysqld --initialize-insecure` & PostgreSQL `initdb`, folder `%LOCALAPPDATA%\Dotnet\data\`).
 - [x] **T5-2:** Dual-mode Service Model (`DevServiceInfo.cs` execution mode: deteksi otomatis portable executable di catalog/tools vs legacy Windows Service fallback).
 - [x] **T5-3:** Prerequisite Checker (`VcRedistChecker.cs` memeriksa registry VC++ 2015-2022 x64 sebelum run database/PHP).
 - [x] **T5-4:** Docker Compose Port Checker v2 (`DockerPortChecker.cs` via `docker compose config --format json`, port ranges `8000-8010`, exclusion container proyek sendiri, fallback robust YAML parser, suggested overrides).
 - [x] **T5-5:** Local HTTPS Certificate Manager (`LocalCertificateManager.cs` Root CA + SAN per-domain certs via .NET `X509Certificate2`, Nginx SSL vhost port 443 + HTTP-to-HTTPS redirect, export ke `%LOCALAPPDATA%\Dotnet\ssl\`).
 - [x] **T5-6:** UI Integrations Form1 (Database card `[PORTABLE]` / `[WIN-SERVICE]` badge & 1-click "Init DB" button, Tab Projects "🔒 HTTPS (.test)" button, Tab Config Root CA trust & SSL folder, Tab Diagnostics async Docker pre-flight report).
+
+### Fase 6 — Rilis, Installer & Distribusi (Selesai)
+- [x] **T6-1:** Standar repositori & lisensi (`LICENSE` MIT, `Directory.Build.props`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`).
+- [x] **T6-2:** Reorganisasi dokumentasi (`docs/reference/` memuat dokumen lama, `docs/DEPENDENCIES.md` audit lisensi/paket, `docs/RELEASE-CHECKLIST.md`).
+- [x] **T6-3:** CI/CD GitHub Actions (`build-test.yml` build matrix, `release.yml` tag-based release packaging).
+- [x] **T6-4:** Packaging skrip Inno Setup (`packaging/DotnetSetup.iss`) & portable packaging script (`packaging/build-portable.ps1` self-contained win-x64 single file + SHA256 checksums).
+- [x] **T6-5:** Safe COM object release di `StartMenuShortcutManager.cs` (F-23) & classic About Dialog (`AboutDialog.cs`) di Form1.
+- [x] **T6-6:** Dokumentasi `README.md` komprehensif bahasa Inggris sesuai SPEC 0.1 & 15.1.
 
 ---
 
@@ -115,4 +125,6 @@
 - **Update 4 (Fase 3):** Runtime terintegrasi & profile system (`standalone` vs `docker`), `ServiceOrchestrator` start/stop ordered, `ProcessTracker` re-adopsi proses eksisting (F-15) + crash detection, `TaskSchedulerManager` elevated logon autostart (F-10), Port Monitor snapshot & PATH shadow analyzer di Tab Diagnostics, Exit Policy dialog (D7), 27 unit tests lolos.
 - **Update 5 (Fase 4):** Konfigurasi & Project Manager v2. Schema config generator (`ConfigSchema`), dynamic PHP extensions scanner & diff preset, async `git config`/`npm config`, `FrameworkDetector` (Laravel, Next.js, Vite, Node, Static), terminal & VS Code runner, `NginxSiteGenerator` dengan vhost di `%LOCALAPPDATA%\Dotnet\nginx\sites\` + auto include + hosts file mapping + atomic rollback, `PhpPoolManager` multi-worker FastCGI upstream, UI modern legacy Win7/XP untuk Tab Projects v2 dan Tab Config v2, 36 unit tests lolos (0 warnings, 0 errors).
 - **Update 6 (Fase 5):** Database Portable & Perluasan (Docker v2). Dual-mode database execution (portable process vs Windows Service), `DatabaseInitializer` (`mysqld --initialize-insecure` & `initdb`), `VcRedistChecker` registry scanner, `DockerPortChecker` v2 (`docker compose config --format json`, port ranges, self-project exclusion, suggested overrides), `LocalCertificateManager` (Root CA + per-domain SSL `.test` certs), Nginx SSL vhost generation + redirect, UI upgrades classic Win7/XP (DB card `[PORTABLE]` badge & Init DB button, Projects 1-click HTTPS, Config Root CA trust & SSL folder, Diagnostics Docker compose inspector), 48 unit tests lolos (0 warnings, 0 errors).
+- **Update 7 (Fase 6):** Rilis, Installer & Distribusi. Standar repo & lisensi (`LICENSE` MIT, `Directory.Build.props`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`), repositori dokumentasi bersih (`docs/reference/`, `docs/DEPENDENCIES.md`, `docs/RELEASE-CHECKLIST.md`), CI/CD GitHub Actions (`build-test.yml`, `release.yml`), Inno Setup script (`packaging/DotnetSetup.iss`), script build portable self-contained win-x64 (`packaging/build-portable.ps1`), resolusi F-23 (safe COM release di `StartMenuShortcutManager.cs`), UI `AboutDialog.cs` classic Win7/XP, dan `README.md` komprehensif.
+
 
