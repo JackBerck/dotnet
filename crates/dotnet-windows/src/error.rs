@@ -16,6 +16,9 @@ pub enum WindowsError {
     #[error("Process inspection error: {0}")]
     ProcessError(String),
 
+    #[error("System error: {0}")]
+    SystemError(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

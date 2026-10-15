@@ -14,7 +14,7 @@
 | **Phase 3** | Service Orchestrator, Process Tracker, Profile Switcher & Path Shadow Analyzer | 🟢 **Done** | 100% |
 | **Phase 4** | Web Hosting, Project Management & Virtual Hosts | 🟢 **Done** | 100% |
 | **Phase 5** | Database Portable Initializer, Docker Compose & CLI Config | 🟢 **Done** | 100% |
-| **Phase 6** | Desktop GUI, System Tray & Standalone Release Packaging | ⚪ **Planned** | 0% |
+| **Phase 6** | Desktop GUI, System Tray & Standalone Release Packaging | 🟢 **Done** | 100% |
 
 ---
 
@@ -72,7 +72,7 @@
 - [x] **P5-5:** `CliConfigManager`: Global settings manager for Git, npm, and Composer.
 - [x] **P5-6:** CLI commands: `dotnet db init/status`, `dotnet compose check`, `dotnet php-ext list/enable/disable`, `dotnet php-preset`.
 
-### Phase 6 — Desktop GUI, Tray & Packaging
-- [ ] **P6-1:** System tray integration (real-time service badges, quick actions).
-- [ ] **P6-2:** Desktop application window (Tabs: Dashboard, Tools, Projects, Config, Diagnostics).
-- [ ] **P6-3:** Release packaging script for single self-contained executable.
+### Phase 6 — Desktop GUI, Tray & Packaging (Done)
+- [x] **P6-1:** System tray integration (native Win32 `Shell_NotifyIconW`, popup context menu, balloon alert notifications, `SingleInstanceGuard` named mutex).
+- [x] **P6-2:** Desktop application window (Embedded HTTP micro-server, Single Page Dashboard UI with 7 tabs: Services, Projects, Tools Catalog, Hosts Manager, PHP & Config, Diagnostics & Ports, Event Logs).
+- [x] **P6-3:** Release packaging scripts (`scripts/package-release.ps1` & `scripts/package-release.sh`) for standalone self-contained release distribution.

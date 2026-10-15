@@ -9,3 +9,4 @@ license.workspace = true
 windows-sys.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+serde = { workspace = true }

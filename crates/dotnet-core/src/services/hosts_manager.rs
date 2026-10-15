@@ -2,6 +2,7 @@
 
 use crate::error::{CoreError, Result};
 use crate::persistence::AppPaths;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 pub const BLOCK_START: &str = "# >>> Dotnet (managed) >>>";
 pub const BLOCK_END: &str = "# <<< Dotnet (managed) <<<";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostEntry {
     pub ip: String,
     pub hostname: String,
@@ -270,6 +271,16 @@ impl HostsFileManager {
         let new_content = Self::render_with_managed_entries(&content, &managed);
         Self::write_atomic(hosts_path, &new_content)?;
         Ok(())
+    }
+
+    /// Read all entries from default Windows hosts file.
+    pub fn read_entries_from_default() -> Result<Vec<HostEntry>> {
+        let path = Self::default_hosts_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = fs::read_to_string(&path)?;
+        Ok(Self::parse_content(&content))
     }
 }
 

@@ -18,10 +18,10 @@ impl DatabaseInitializer {
         AppPaths::get_path("data").join(service_id.to_lowercase())
     }
 
-    /// Check if database is already initialized.
+    /// Check if database is already initialized in a specific directory.
     #[must_use]
-    pub fn is_initialized(service_id: &str) -> bool {
-        let data_dir = Self::get_data_directory(service_id);
+    pub fn is_initialized_in<P: AsRef<Path>>(service_id: &str, data_dir: P) -> bool {
+        let data_dir = data_dir.as_ref();
         if !data_dir.is_dir() {
             return false;
         }
@@ -33,11 +33,18 @@ impl DatabaseInitializer {
             data_dir.join("PG_VERSION").is_file()
         } else {
             // Fallback: check if directory has any files/folders
-            match fs::read_dir(&data_dir) {
+            match fs::read_dir(data_dir) {
                 Ok(mut entries) => entries.next().is_some(),
                 Err(_) => false,
             }
         }
+    }
+
+    /// Check if database is already initialized using default data directory.
+    #[must_use]
+    pub fn is_initialized(service_id: &str) -> bool {
+        let data_dir = Self::get_data_directory(service_id);
+        Self::is_initialized_in(service_id, data_dir)
     }
 
     /// Run initialization for MySQL or PostgreSQL.
@@ -264,21 +271,20 @@ mod tests {
     #[test]
     fn test_is_initialized_detection() {
         let dir = tempdir().expect("tempdir");
-        std::env::set_var("DOTNET_DATA_DIR", dir.path().to_str().unwrap());
+        let mysql_dir = dir.path().join("mysql");
+        let pg_dir = dir.path().join("postgres");
 
         // Initially not initialized
-        assert!(!DatabaseInitializer::is_initialized("mysql"));
-        assert!(!DatabaseInitializer::is_initialized("postgres"));
+        assert!(!DatabaseInitializer::is_initialized_in("mysql", &mysql_dir));
+        assert!(!DatabaseInitializer::is_initialized_in("postgres", &pg_dir));
 
         // Create mock MySQL data directory
-        let mysql_dir = DatabaseInitializer::get_data_directory("mysql");
         fs::create_dir_all(mysql_dir.join("mysql")).expect("mkdir mysql");
-        assert!(DatabaseInitializer::is_initialized("mysql"));
+        assert!(DatabaseInitializer::is_initialized_in("mysql", &mysql_dir));
 
         // Create mock PostgreSQL data directory
-        let pg_dir = DatabaseInitializer::get_data_directory("postgres");
         fs::create_dir_all(&pg_dir).expect("mkdir pg");
         fs::write(pg_dir.join("PG_VERSION"), "16\n").expect("write PG_VERSION");
-        assert!(DatabaseInitializer::is_initialized("postgres"));
+        assert!(DatabaseInitializer::is_initialized_in("postgres", &pg_dir));
     }
 }
