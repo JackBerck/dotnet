@@ -3,8 +3,9 @@ use dotnet_core::catalog::CatalogLoader;
 use dotnet_core::installation::{InstalledToolStore, ToolInstaller};
 use dotnet_core::models::ProjectInfo;
 use dotnet_core::services::{
-    FrameworkDetector, HostsFileManager, LocalCertManager, NginxManager, NginxSiteGenerator,
-    PathShadowAnalyzer, PhpPoolManager, ProcessTracker, ProfileStore, ProjectManager,
+    DatabaseInitializer, DockerPortChecker, FrameworkDetector, HostsFileManager, LocalCertManager,
+    NginxManager, NginxSiteGenerator, PathShadowAnalyzer, PhpConfigManager, PhpPoolManager,
+    ProcessTracker, ProfileStore, ProjectManager,
 };
 use dotnet_windows::{get_active_tcp_listeners, get_service_status, TaskScheduler};
 use std::path::{Path, PathBuf};
@@ -77,6 +78,53 @@ enum Commands {
         #[arg(short, long, default_value_t = 9000)]
         port: u16,
     },
+    /// Initialize portable database engines (MySQL, PostgreSQL)
+    Db {
+        #[command(subcommand)]
+        action: DbAction,
+    },
+    /// Inspect Docker Compose v2 port collisions and suggestions
+    Compose {
+        /// Path to docker-compose.yml file
+        file: String,
+    },
+    /// Manage PHP extensions (list, enable, disable)
+    PhpExt {
+        #[command(subcommand)]
+        action: PhpExtAction,
+    },
+    /// Apply PHP development or production preset
+    PhpPreset {
+        /// Preset name ('development' or 'production')
+        preset: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DbAction {
+    /// Initialize database data directory
+    Init {
+        /// Database engine ('mysql' or 'postgres')
+        service: String,
+        /// Custom binary path (mysqld.exe or postgres.exe / initdb.exe)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Check whether database is already initialized
+    Status {
+        /// Database engine ('mysql' or 'postgres')
+        service: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum PhpExtAction {
+    /// List all extensions and their status
+    List,
+    /// Enable an extension
+    Enable { name: String },
+    /// Disable an extension
+    Disable { name: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -582,6 +630,141 @@ async fn main() -> anyhow::Result<()> {
                     println!("Unknown action '{}'. Use: status, start, stop", action);
                 }
             }
+        }
+        Some(Commands::Db { action }) => match action {
+            DbAction::Init { service, path } => {
+                let bin_path = if let Some(p) = path {
+                    PathBuf::from(p)
+                } else {
+                    let tools_dir = dotnet_core::persistence::AppPaths::tools_dir()
+                        .join(&service)
+                        .join("current");
+                    let expected_exe = match service.to_lowercase().as_str() {
+                        "mysql" | "mariadb" => "mysqld.exe",
+                        "postgres" | "postgresql" => "initdb.exe",
+                        _ => "server.exe",
+                    };
+                    let candidate = tools_dir.join(expected_exe);
+                    if candidate.is_file() {
+                        candidate
+                    } else {
+                        which::which(expected_exe).map_err(|_| {
+                            anyhow::anyhow!(
+                                "Binary '{expected_exe}' not found in tools directory or PATH. Specify --path."
+                            )
+                        })?
+                    }
+                };
+
+                println!(
+                    "Initializing database '{service}' using {}...",
+                    bin_path.display()
+                );
+                let msg = DatabaseInitializer::initialize_database(&service, &bin_path).await?;
+                println!("{msg}");
+            }
+            DbAction::Status { service } => {
+                let init = DatabaseInitializer::is_initialized(&service);
+                let data_dir = DatabaseInitializer::get_data_directory(&service);
+                println!(
+                    "Database '{}': {} (Data dir: {})",
+                    service,
+                    if init {
+                        "INITIALIZED"
+                    } else {
+                        "NOT INITIALIZED"
+                    },
+                    data_dir.display()
+                );
+            }
+        },
+        Some(Commands::Compose { file }) => {
+            let compose_path = Path::new(&file);
+            println!(
+                "Inspecting Docker Compose file: {}...\n",
+                compose_path.display()
+            );
+            let report = DockerPortChecker::check_compose_file(compose_path).await?;
+
+            println!(
+                "Docker Available: {}",
+                if report.is_docker_available {
+                    "Yes"
+                } else {
+                    "No (fallback mode)"
+                }
+            );
+            println!("Status: {}", report.message);
+            println!("Total Ports Checked: {}\n", report.total_ports_checked());
+
+            if !report.conflicts.is_empty() {
+                println!(
+                    "{:<16} {:<12} {:<12} {:<16} {:<24} {:<14}",
+                    "SERVICE", "HOST PORT", "CONT PORT", "STATUS", "OCCUPIED BY", "SUGGESTED PORT"
+                );
+                println!("{}", "-".repeat(94));
+                for c in &report.conflicts {
+                    let status = if c.is_conflicting {
+                        "[CONFLICT]"
+                    } else if c.is_same_project_container {
+                        "[OWN CONTAINER]"
+                    } else {
+                        "[OK]"
+                    };
+                    let sug = if c.is_conflicting {
+                        c.suggested_override_port.to_string()
+                    } else {
+                        "-".to_string()
+                    };
+                    println!(
+                        "{:<16} {:<12} {:<12} {:<16} {:<24} {:<14}",
+                        c.service_name,
+                        c.host_port,
+                        c.container_port,
+                        status,
+                        c.conflict_owner,
+                        sug
+                    );
+                }
+            }
+        }
+        Some(Commands::PhpExt { action }) => {
+            let mgr = PhpConfigManager::new();
+            match action {
+                PhpExtAction::List => {
+                    println!("PHP Directory: {}", mgr.php_dir().display());
+                    println!("INI File:      {}\n", mgr.ini_path().display());
+
+                    let exts = mgr.get_available_extensions()?;
+                    if exts.is_empty() {
+                        println!("No extension DLLs found in ext/ directory.");
+                    } else {
+                        println!("{:<24} {:<28} {:<12}", "EXTENSION", "FILE NAME", "STATUS");
+                        println!("{}", "-".repeat(66));
+                        for e in exts {
+                            println!(
+                                "{:<24} {:<28} {:<12}",
+                                e.name,
+                                e.file_name,
+                                if e.is_enabled { "ENABLED" } else { "DISABLED" }
+                            );
+                        }
+                    }
+                }
+                PhpExtAction::Enable { name } => {
+                    mgr.toggle_extension(&name, true)?;
+                    println!("PHP extension '{name}' enabled in php.ini.");
+                }
+                PhpExtAction::Disable { name } => {
+                    mgr.toggle_extension(&name, false)?;
+                    println!("PHP extension '{name}' disabled in php.ini.");
+                }
+            }
+        }
+        Some(Commands::PhpPreset { preset }) => {
+            let mgr = PhpConfigManager::new();
+            let msg = mgr.apply_preset(&preset)?;
+            println!("{msg}");
         }
         None => {
             println!("Dotnet Rust CLI Engine v{}", env!("CARGO_PKG_VERSION"));

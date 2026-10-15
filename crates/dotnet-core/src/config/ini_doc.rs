@@ -118,6 +118,35 @@ impl IniDocument {
                 && (trimmed == expected_spaced || trimmed == expected_tight)
         })
     }
+
+    /// Disable an extension by prefixing with `;`.
+    pub fn disable_extension(&mut self, ext: &str) {
+        let expected_spaced = format!("extension = {ext}");
+        let expected_tight = format!("extension={ext}");
+
+        for line in self.lines.iter_mut() {
+            let trimmed = line.trim();
+            if !trimmed.starts_with(';')
+                && !trimmed.starts_with('#')
+                && (trimmed == expected_spaced || trimmed == expected_tight)
+            {
+                *line = format!(";extension = {ext}");
+                return;
+            }
+        }
+    }
+
+    /// Normalize DLL name: e.g. "php_curl.dll" -> "curl", "curl.dll" -> "curl".
+    pub fn normalize_extension_name(file_name: &str) -> String {
+        let mut name = file_name;
+        if let Some(stripped) = name.strip_prefix("php_") {
+            name = stripped;
+        }
+        if let Some(stripped) = name.strip_suffix(".dll") {
+            name = stripped;
+        }
+        name.to_lowercase()
+    }
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 | **Phase 2** | Catalog, Safe Downloader, Zip-Slip Extractor & PATH Manager | 🟢 **Done** | 100% |
 | **Phase 3** | Service Orchestrator, Process Tracker, Profile Switcher & Path Shadow Analyzer | 🟢 **Done** | 100% |
 | **Phase 4** | Web Hosting, Project Management & Virtual Hosts | 🟢 **Done** | 100% |
-| **Phase 5** | Database Portable Initializer & Docker Compose Inspector | ⚪ **Planned** | 0% |
+| **Phase 5** | Database Portable Initializer, Docker Compose & CLI Config | 🟢 **Done** | 100% |
 | **Phase 6** | Desktop GUI, System Tray & Standalone Release Packaging | ⚪ **Planned** | 0% |
 
 ---
@@ -64,10 +64,13 @@
 - [x] **P4-4:** `PhpPoolManager`: Multi-worker sequential FastCGI pool controller (ports 9000..900N), `upstream php_pool` generator, and process supervisor.
 - [x] **P4-5:** CLI integration: `dotnet projects` (list, add, remove, run, explore, terminal, code, domain) and `dotnet phppool` (status, start, stop).
 
-### Phase 5 — Database & Docker
-- [ ] **P5-1:** Portable MySQL non-elevated initialization (`--initialize-insecure`).
-- [ ] **P5-2:** Portable PostgreSQL initialization (`initdb -U root -E UTF8`).
-- [ ] **P5-3:** Docker Compose v2 port collision inspector.
+### Phase 5 — Database Portable Initializer, Docker Compose & CLI Config (Done)
+- [x] **P5-1:** Portable MySQL non-elevated initialization (`--initialize-insecure --datadir=... --console`) with state detection.
+- [x] **P5-2:** Portable PostgreSQL initialization (`initdb -D ... -U postgres -A trust --encoding=UTF8`) with state detection.
+- [x] **P5-3:** Docker Compose v2 port collision inspector with native YAML fallback parser, port range expansion, and sequential conflict override suggestion.
+- [x] **P5-4:** `PhpConfigManager`: Structured `php.ini` management, extension inspection/toggling, and `development`/`production` preset applier with timestamped backups.
+- [x] **P5-5:** `CliConfigManager`: Global settings manager for Git, npm, and Composer.
+- [x] **P5-6:** CLI commands: `dotnet db init/status`, `dotnet compose check`, `dotnet php-ext list/enable/disable`, `dotnet php-preset`.
 
 ### Phase 6 — Desktop GUI, Tray & Packaging
 - [ ] **P6-1:** System tray integration (real-time service badges, quick actions).
