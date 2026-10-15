@@ -1,7 +1,10 @@
 use clap::{Parser, Subcommand};
 use dotnet_core::catalog::CatalogLoader;
 use dotnet_core::installation::{InstalledToolStore, ToolInstaller};
-use dotnet_core::services::{HostsFileManager, LocalCertManager, NginxManager};
+use dotnet_core::services::{
+    HostsFileManager, LocalCertManager, NginxManager, PathShadowAnalyzer, ProcessTracker,
+    ProfileStore,
+};
 use dotnet_windows::{get_active_tcp_listeners, get_service_status, TaskScheduler};
 use tracing::info;
 
@@ -47,6 +50,15 @@ enum Commands {
         #[arg(short, long)]
         id: Option<String>,
     },
+    /// Manage service orchestration profiles (standalone vs docker)
+    Profile {
+        #[arg(short, long)]
+        switch: Option<String>,
+    },
+    /// Analyze PATH shadow collisions between System and User PATH
+    Shadow,
+    /// Display full system and daemon status overview
+    Status,
     /// Inspect Task Scheduler autostart status
     Autostart,
 }
@@ -220,6 +232,79 @@ async fn main() -> anyhow::Result<()> {
                         );
                     }
                 }
+            }
+        }
+        Some(Commands::Profile { switch }) => {
+            let store = ProfileStore::new();
+            if let Some(target) = switch {
+                if store.set_active_profile(&target)? {
+                    println!("Switched active profile to '{}'.", target);
+                } else {
+                    println!("Profile '{}' not found.", target);
+                }
+            } else {
+                let config = store.load_config()?;
+                println!("Active Profile: {}\n", config.active_profile_id);
+                println!("{:<15} {:<35} {:<30}", "ID", "NAME", "SERVICES");
+                println!("{}", "-".repeat(80));
+                for p in config.profiles {
+                    let marker = if p.id.eq_ignore_ascii_case(&config.active_profile_id) {
+                        "* "
+                    } else {
+                        "  "
+                    };
+                    println!(
+                        "{}{:<13} {:<35} {:<30}",
+                        marker,
+                        p.id,
+                        p.name,
+                        p.service_ids.join(", ")
+                    );
+                }
+            }
+        }
+        Some(Commands::Shadow) => {
+            println!("Analyzing PATH Shadow collisions...\n");
+            let results = PathShadowAnalyzer::analyze(None, None)?;
+            if results.is_empty() {
+                println!("No managed binaries detected in User PATH.");
+            } else {
+                for r in results {
+                    let status = if r.is_shadowed { "[COLLISION]" } else { "[OK]" };
+                    println!("{} {}", status, r.binary_name);
+                    println!(
+                        "  User Location:   {}",
+                        r.user_path_location.unwrap_or_default()
+                    );
+                    println!(
+                        "  System Location: {}",
+                        r.system_path_location.unwrap_or_default()
+                    );
+                    println!("  Advice:          {}\n", r.recommendation);
+                }
+            }
+        }
+        Some(Commands::Status) => {
+            let profile_store = ProfileStore::new();
+            let active_profile = profile_store.get_active_profile()?;
+            let tracker = ProcessTracker::new();
+            let tracked = tracker.get_tracked_processes()?;
+
+            println!("=== Dotnet Development Engine Status ===");
+            println!(
+                "Active Profile: {} ({})",
+                active_profile.name, active_profile.id
+            );
+            println!(
+                "Managed Services: {}",
+                active_profile.service_ids.join(", ")
+            );
+            println!("\nTracked Background Processes: {}", tracked.len());
+            for t in tracked {
+                println!(
+                    "  • {:<12} (PID: {:<6}) at {}",
+                    t.service_id, t.pid, t.executable_path
+                );
             }
         }
         Some(Commands::Autostart) => {

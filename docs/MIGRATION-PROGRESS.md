@@ -11,7 +11,7 @@
 | **Phase 0** | Workspace Scaffolding, Toolchain, Git & Docs | 🟢 **Done** | 100% |
 | **Phase 1** | Native Windows Core (IP helper, Registry, SCM, Task Scheduler, Hosts, Nginx, SSL) | 🟢 **Done** | 100% |
 | **Phase 2** | Catalog, Safe Downloader, Zip-Slip Extractor & PATH Manager | 🟢 **Done** | 100% |
-| **Phase 3** | Service Orchestrator, Process Tracker & Dynamic Tray | ⚪ **Planned** | 0% |
+| **Phase 3** | Service Orchestrator, Process Tracker, Profile Switcher & Path Shadow Analyzer | 🟢 **Done** | 100% |
 | **Phase 4** | Config Engine (PHP INI, CLI presets) & Project Manager v2 | ⚪ **Planned** | 20% |
 | **Phase 5** | Database Portable Initializer & Docker Compose Inspector | ⚪ **Planned** | 0% |
 | **Phase 6** | Desktop GUI, System Tray & Standalone Release Packaging | ⚪ **Planned** | 0% |
@@ -50,11 +50,12 @@
 - [x] **P2-6:** Persistent installed tools store with atomic JSON storage (`InstalledToolStore`).
 - [x] **P2-7:** Complete tool installer and uninstaller lifecycle orchestrator (`ToolInstaller`).
 
-### Phase 3 — Service Orchestration & Process Surveillance
-- [ ] **P3-1:** Process surveillance & PID tracking (`running-processes.json`).
-- [ ] **P3-2:** Startup process re-adoption with validation of image path and start time.
-- [ ] **P3-3:** Dependency-ordered startup (Databases first -> Web servers) & reverse shutdown.
-- [ ] **P3-4:** Profile switcher (`standalone` vs `docker`).
+### Phase 3 — Service Orchestration & Process Surveillance (Done)
+- [x] **P3-1:** Process surveillance & PID tracking with startup re-adoption in `running-processes.json` (`ProcessTracker`).
+- [x] **P3-2:** Service profile switcher (`standalone` vs `docker`) and persistent store (`ProfileStore`).
+- [x] **P3-3:** Dependency-ordered startup (Databases first -> Web servers) & reverse shutdown (`ServiceOrchestrator`).
+- [x] **P3-4:** PATH shadow analyzer detecting System PATH vs User PATH binary collisions (`PathShadowAnalyzer`).
+- [x] **P3-5:** Backward-compatible envelope and UTF-8 BOM deserializer (`JsonStore`).
 
 ### Phase 4 — Configuration & Projects
 - [x] **P4-1:** `IniDocument` format-preserving parser and editor.

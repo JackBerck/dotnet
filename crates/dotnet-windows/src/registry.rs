@@ -1,4 +1,4 @@
-//! Windows Registry manipulation (specifically HKCU\\Environment\\Path) and environment broadcast.
+//! Windows Registry manipulation (User and System PATH) and environment broadcast.
 
 use crate::error::{Result, WindowsError};
 use std::ffi::OsStr;
@@ -6,7 +6,7 @@ use std::os::windows::ffi::OsStrExt;
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HWND};
 use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
-    KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ,
+    HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
@@ -19,21 +19,12 @@ fn to_wide(s: &str) -> Vec<u16> {
         .collect()
 }
 
-/// Reads user PATH directly from HKCU\Environment without expanding variable references.
-pub fn get_user_path() -> Result<String> {
-    let subkey = to_wide("Environment");
-    let val_name = to_wide("Path");
+fn read_registry_string(root: HKEY, subkey_name: &str, val_name: &str) -> Result<String> {
+    let subkey = to_wide(subkey_name);
+    let val = to_wide(val_name);
 
     let mut hkey: HKEY = std::ptr::null_mut();
-    let status = unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            subkey.as_ptr(),
-            0,
-            KEY_QUERY_VALUE,
-            &mut hkey,
-        )
-    };
+    let status = unsafe { RegOpenKeyExW(root, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) };
 
     if status != ERROR_SUCCESS {
         return Err(WindowsError::RegistryError(status));
@@ -46,7 +37,7 @@ pub fn get_user_path() -> Result<String> {
     let status = unsafe {
         RegQueryValueExW(
             hkey,
-            val_name.as_ptr(),
+            val.as_ptr(),
             std::ptr::null_mut(),
             &mut val_type,
             std::ptr::null_mut(),
@@ -69,7 +60,7 @@ pub fn get_user_path() -> Result<String> {
     let status = unsafe {
         RegQueryValueExW(
             hkey,
-            val_name.as_ptr(),
+            val.as_ptr(),
             std::ptr::null_mut(),
             &mut val_type,
             buffer.as_mut_ptr() as *mut _,
@@ -91,6 +82,20 @@ pub fn get_user_path() -> Result<String> {
     }
 
     Ok(String::from_utf16_lossy(&buffer))
+}
+
+/// Reads user PATH directly from HKCU\Environment without expanding variable references.
+pub fn get_user_path() -> Result<String> {
+    read_registry_string(HKEY_CURRENT_USER, "Environment", "Path")
+}
+
+/// Reads system PATH directly from HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment.
+pub fn get_system_path() -> Result<String> {
+    read_registry_string(
+        HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        "Path",
+    )
 }
 
 /// Writes user PATH to HKCU\Environment as REG_EXPAND_SZ and broadcasts WM_SETTINGCHANGE.
