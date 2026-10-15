@@ -9,7 +9,7 @@
 | Phase | Description | Status | Progress |
 |---|---|---|---|
 | **Phase 0** | Workspace Scaffolding, Toolchain, Git & Docs | 🟢 **Done** | 100% |
-| **Phase 1** | Native Windows Core (IP helper, Registry, SCM, Task Scheduler) | 🟡 **In Progress** | 70% |
+| **Phase 1** | Native Windows Core (IP helper, Registry, SCM, Task Scheduler, Hosts, Nginx, SSL) | 🟢 **Done** | 100% |
 | **Phase 2** | Catalog, Safe Downloader, Zip-Slip Extractor & PATH Manager | ⚪ **Planned** | 0% |
 | **Phase 3** | Service Orchestrator, Process Tracker & Dynamic Tray | ⚪ **Planned** | 0% |
 | **Phase 4** | Config Engine (PHP INI, CLI presets) & Project Manager v2 | ⚪ **Planned** | 20% |
@@ -29,13 +29,17 @@
 - [x] **P0-6:** Create base knowledge documentation (`MIGRATION-SPEC.md`, `RUST-BEST-PRACTICES.md`, `DOMAIN-KNOWLEDGE.md`).
 - [x] **P0-7:** Initialize Git repository and make initial commit.
 
-### Phase 1 — Native Windows Core
+### Phase 1 — Native Windows Core & Core System Services (Done)
 - [x] **P1-1:** Direct Win32 `GetExtendedTcpTable` wrapper without `netstat` (IPv4).
-- [ ] **P1-2:** Add IPv6 support to `GetExtendedTcpTable`.
+- [x] **P1-2:** Add IPv6 support to `GetExtendedTcpTable` in `dotnet-windows::ip_helper`.
 - [x] **P1-3:** `HKCU\Environment\Path` atomic read & write (`REG_EXPAND_SZ`).
 - [x] **P1-4:** `WM_SETTINGCHANGE` broadcast with timeout guard.
-- [ ] **P1-5:** Windows Service Controller query & start/stop integration.
-- [ ] **P1-6:** Task Scheduler elevated autostart wrapper.
+- [x] **P1-5:** Windows Service Controller query & start/stop integration (`dotnet-windows::service_ctrl`).
+- [x] **P1-6:** Task Scheduler elevated autostart wrapper (`dotnet-windows::task_scheduler`).
+- [x] **P1-7:** Hosts file manager with managed block `# >>> Dotnet (managed) >>>` and backup (`dotnet-core::services::hosts_manager`).
+- [x] **P1-8:** Nginx async runner with syntax test (`-t`), graceful reload (`-s reload`), quit (`-s quit`) and error log viewer (`dotnet-core::services::nginx_manager`).
+- [x] **P1-9:** Pure Rust Local Root CA & SAN SSL certificate generator via `rcgen` (`dotnet-core::services::cert_manager`).
+- [x] **P1-10:** Process supervisor with non-blocking pipe log redirection and safe termination (`dotnet-core::services::process_service`).
 
 ### Phase 2 — Catalog & Safe Installation
 - [x] **P2-1:** Tool manifest deserialization models.

@@ -30,6 +30,8 @@ impl CatalogLoader {
     /// Find an embedded tool manifest by ID.
     pub fn find_embedded(id: &str) -> Result<Option<ToolManifest>> {
         let manifests = Self::load_embedded()?;
-        Ok(manifests.into_iter().find(|m| m.id.eq_ignore_ascii_case(id)))
+        Ok(manifests
+            .into_iter()
+            .find(|m| m.id.eq_ignore_ascii_case(id)))
     }
 }

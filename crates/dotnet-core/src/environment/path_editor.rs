@@ -20,9 +20,9 @@ impl PathEditor {
     /// Check if path contains a specific directory (case-insensitive on Windows).
     pub fn contains(path: &str, dir: &str) -> bool {
         let normalized = dir.trim().trim_end_matches('\\').to_lowercase();
-        Self::split_path(path).iter().any(|entry| {
-            entry.trim_end_matches('\\').to_lowercase() == normalized
-        })
+        Self::split_path(path)
+            .iter()
+            .any(|entry| entry.trim_end_matches('\\').to_lowercase() == normalized)
     }
 
     /// Add directory to PATH. If prepend is true, adds to front. Avoids duplicates.

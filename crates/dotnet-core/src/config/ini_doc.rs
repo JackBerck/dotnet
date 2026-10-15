@@ -10,11 +10,18 @@ impl IniDocument {
             lines: content.lines().map(|s| s.to_string()).collect(),
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.lines.join("\r\n") + "\r\n"
+impl std::fmt::Display for IniDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for line in &self.lines {
+            writeln!(f, "{line}")?;
+        }
+        Ok(())
     }
+}
 
+impl IniDocument {
     /// Retrieve setting value (excluding commented lines).
     pub fn get_value(&self, key: &str) -> Option<String> {
         for line in &self.lines {

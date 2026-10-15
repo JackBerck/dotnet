@@ -13,7 +13,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 fn to_wide(s: &str) -> Vec<u16> {
-    OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 /// Reads user PATH directly from HKCU\Environment without expanding variable references.
@@ -52,8 +55,11 @@ pub fn get_user_path() -> Result<String> {
     };
 
     if status != ERROR_SUCCESS {
-        unsafe { RegCloseKey(hkey); }
-        if status == 2 { // ERROR_FILE_NOT_FOUND
+        unsafe {
+            RegCloseKey(hkey);
+        }
+        if status == 2 {
+            // ERROR_FILE_NOT_FOUND
             return Ok(String::new());
         }
         return Err(WindowsError::RegistryError(status));
@@ -71,7 +77,9 @@ pub fn get_user_path() -> Result<String> {
         )
     };
 
-    unsafe { RegCloseKey(hkey); }
+    unsafe {
+        RegCloseKey(hkey);
+    }
 
     if status != ERROR_SUCCESS {
         return Err(WindowsError::RegistryError(status));
@@ -118,7 +126,9 @@ pub fn set_user_path(new_path: &str) -> Result<()> {
         )
     };
 
-    unsafe { RegCloseKey(hkey); }
+    unsafe {
+        RegCloseKey(hkey);
+    }
 
     if status != ERROR_SUCCESS {
         return Err(WindowsError::RegistryError(status));
