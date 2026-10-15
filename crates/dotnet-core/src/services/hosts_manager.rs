@@ -219,6 +219,58 @@ impl HostsFileManager {
 
         Ok(())
     }
+
+    /// Add or update a managed entry in the hosts file.
+    pub fn add_or_update_managed_entry<P: AsRef<Path>>(
+        hosts_path: P,
+        ip: &str,
+        hostname: &str,
+    ) -> Result<()> {
+        let hosts_path = hosts_path.as_ref();
+        if !hosts_path.exists() {
+            return Err(CoreError::Config(format!(
+                "Hosts file not found at {}",
+                hosts_path.display()
+            )));
+        }
+        let content = fs::read_to_string(hosts_path)?;
+        let entries = Self::parse_content(&content);
+        let mut managed: Vec<HostEntry> = entries.into_iter().filter(|e| e.is_managed).collect();
+        if let Some(existing) = managed
+            .iter_mut()
+            .find(|e| e.hostname.eq_ignore_ascii_case(hostname))
+        {
+            existing.ip = ip.to_string();
+            existing.is_enabled = true;
+        } else {
+            managed.push(HostEntry {
+                ip: ip.to_string(),
+                hostname: hostname.to_string(),
+                is_enabled: true,
+                is_managed: true,
+            });
+        }
+        let new_content = Self::render_with_managed_entries(&content, &managed);
+        Self::write_atomic(hosts_path, &new_content)?;
+        Ok(())
+    }
+
+    /// Remove a managed entry from the hosts file by hostname.
+    pub fn remove_managed_entry<P: AsRef<Path>>(hosts_path: P, hostname: &str) -> Result<()> {
+        let hosts_path = hosts_path.as_ref();
+        if !hosts_path.exists() {
+            return Ok(());
+        }
+        let content = fs::read_to_string(hosts_path)?;
+        let entries = Self::parse_content(&content);
+        let managed: Vec<HostEntry> = entries
+            .into_iter()
+            .filter(|e| e.is_managed && !e.hostname.eq_ignore_ascii_case(hostname))
+            .collect();
+        let new_content = Self::render_with_managed_entries(&content, &managed);
+        Self::write_atomic(hosts_path, &new_content)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -269,5 +321,22 @@ mod tests {
         assert_eq!(managed.len(), 2);
         assert!(managed[0].is_enabled);
         assert!(!managed[1].is_enabled);
+    }
+
+    #[test]
+    fn test_add_and_remove_managed_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let hosts_file = temp.path().join("hosts");
+        fs::write(&hosts_file, "127.0.0.1 localhost\r\n").unwrap();
+
+        HostsFileManager::add_or_update_managed_entry(&hosts_file, "127.0.0.1", "site.test")
+            .unwrap();
+        let content = fs::read_to_string(&hosts_file).unwrap();
+        assert!(content.contains("127.0.0.1  site.test"));
+
+        // Remove entry
+        HostsFileManager::remove_managed_entry(&hosts_file, "site.test").unwrap();
+        let content2 = fs::read_to_string(&hosts_file).unwrap();
+        assert!(!content2.contains("site.test"));
     }
 }

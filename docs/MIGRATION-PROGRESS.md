@@ -12,7 +12,7 @@
 | **Phase 1** | Native Windows Core (IP helper, Registry, SCM, Task Scheduler, Hosts, Nginx, SSL) | 🟢 **Done** | 100% |
 | **Phase 2** | Catalog, Safe Downloader, Zip-Slip Extractor & PATH Manager | 🟢 **Done** | 100% |
 | **Phase 3** | Service Orchestrator, Process Tracker, Profile Switcher & Path Shadow Analyzer | 🟢 **Done** | 100% |
-| **Phase 4** | Config Engine (PHP INI, CLI presets) & Project Manager v2 | ⚪ **Planned** | 20% |
+| **Phase 4** | Web Hosting, Project Management & Virtual Hosts | 🟢 **Done** | 100% |
 | **Phase 5** | Database Portable Initializer & Docker Compose Inspector | ⚪ **Planned** | 0% |
 | **Phase 6** | Desktop GUI, System Tray & Standalone Release Packaging | ⚪ **Planned** | 0% |
 
@@ -57,12 +57,12 @@
 - [x] **P3-4:** PATH shadow analyzer detecting System PATH vs User PATH binary collisions (`PathShadowAnalyzer`).
 - [x] **P3-5:** Backward-compatible envelope and UTF-8 BOM deserializer (`JsonStore`).
 
-### Phase 4 — Configuration & Projects
-- [x] **P4-1:** `IniDocument` format-preserving parser and editor.
-- [ ] **P4-2:** Nginx virtual host generator with automatic SSL routing.
-- [ ] **P4-3:** Atomic `nginx -t` validation with rollback on error.
-- [ ] **P4-4:** Hosts file managed block (`# >>> Dotnet (managed) >>>`) editor.
-- [ ] **P4-5:** Local Root CA and SAN SSL certificate generator (`rcgen`).
+### Phase 4 — Web Hosting, Project Management & Virtual Hosts (Done)
+- [x] **P4-1:** `FrameworkDetector`: Auto-detects 7 framework profiles (Laravel, PHP, Next.js, Vite, Node, Static, Custom) and computes RFC 1123 safe hostnames.
+- [x] **P4-2:** `ProjectInfo` & `ProjectManager`: Full JSON schema parity with C#, legacy migration support, CRUD persistence, and Windows developer launchers (cmd dev server, explorer, WT/powershell, vscode, notepad .env).
+- [x] **P4-3:** `NginxSiteGenerator`: VHost generator supporting HTTP, HTTPS (301 redirect + TLS 1.2/1.3 + SAN SSL), FastCGI PHP routing, WebSocket Upgrade reverse proxying, restricted domains defense, and atomic rollback on syntax error.
+- [x] **P4-4:** `PhpPoolManager`: Multi-worker sequential FastCGI pool controller (ports 9000..900N), `upstream php_pool` generator, and process supervisor.
+- [x] **P4-5:** CLI integration: `dotnet projects` (list, add, remove, run, explore, terminal, code, domain) and `dotnet phppool` (status, start, stop).
 
 ### Phase 5 — Database & Docker
 - [ ] **P5-1:** Portable MySQL non-elevated initialization (`--initialize-insecure`).

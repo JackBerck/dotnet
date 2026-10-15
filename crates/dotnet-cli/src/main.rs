@@ -1,11 +1,13 @@
 use clap::{Parser, Subcommand};
 use dotnet_core::catalog::CatalogLoader;
 use dotnet_core::installation::{InstalledToolStore, ToolInstaller};
+use dotnet_core::models::ProjectInfo;
 use dotnet_core::services::{
-    HostsFileManager, LocalCertManager, NginxManager, PathShadowAnalyzer, ProcessTracker,
-    ProfileStore,
+    FrameworkDetector, HostsFileManager, LocalCertManager, NginxManager, NginxSiteGenerator,
+    PathShadowAnalyzer, PhpPoolManager, ProcessTracker, ProfileStore, ProjectManager,
 };
 use dotnet_windows::{get_active_tcp_listeners, get_service_status, TaskScheduler};
+use std::path::{Path, PathBuf};
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -61,6 +63,84 @@ enum Commands {
     Status,
     /// Inspect Task Scheduler autostart status
     Autostart,
+    /// Manage local projects, frameworks, dev commands, and virtual hosts
+    Projects {
+        #[command(subcommand)]
+        action: Option<ProjectAction>,
+    },
+    /// Manage PHP FastCGI multi-worker pool
+    PhpPool {
+        #[arg(short, long, default_value = "status")]
+        action: String,
+        #[arg(short, long, default_value_t = 2)]
+        size: usize,
+        #[arg(short, long, default_value_t = 9000)]
+        port: u16,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ProjectAction {
+    /// List all registered projects
+    List,
+    /// Add and configure a new project
+    Add {
+        /// Project directory path
+        path: String,
+        /// Project name (defaults to folder name)
+        #[arg(short, long)]
+        name: Option<String>,
+        /// Local test domain (e.g. myapp.test)
+        #[arg(short, long)]
+        host: Option<String>,
+        /// Dev server port (for Node/Vite/Next)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Framework type (laravel, php, nextjs, vite, node, static)
+        #[arg(short, long)]
+        framework: Option<String>,
+        /// Enable HTTPS with local SAN SSL certificate
+        #[arg(long)]
+        ssl: bool,
+    },
+    /// Remove a registered project
+    Remove {
+        /// Project ID, name, or domain
+        target: String,
+        /// Also delete Nginx virtual host and hosts entry
+        #[arg(long)]
+        delete_site: bool,
+    },
+    /// Launch project dev server command
+    Run {
+        /// Project ID, name, or domain
+        target: String,
+    },
+    /// Open project directory in Windows Explorer
+    Explore {
+        /// Project ID, name, or domain
+        target: String,
+    },
+    /// Open project in Windows Terminal / PowerShell
+    Terminal {
+        /// Project ID, name, or domain
+        target: String,
+    },
+    /// Open project in Visual Studio Code
+    Code {
+        /// Project ID, name, or domain
+        target: String,
+    },
+    /// Update project domain and regenerate Nginx vhost
+    Domain {
+        /// Project ID, name, or domain
+        target: String,
+        /// New domain (e.g. newdomain.test)
+        domain: String,
+        /// Enable SSL for new domain
+        #[arg(long)]
+        ssl: bool,
+    },
 }
 
 #[tokio::main]
@@ -89,7 +169,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Hosts { path }) => {
             let hosts_path = path
-                .map(std::path::PathBuf::from)
+                .map(PathBuf::from)
                 .unwrap_or_else(HostsFileManager::default_hosts_path);
             println!("Reading hosts from: {}", hosts_path.display());
             if hosts_path.exists() {
@@ -319,6 +399,189 @@ async fn main() -> anyhow::Result<()> {
                     "NOT CONFIGURED"
                 }
             );
+        }
+        Some(Commands::Projects { action }) => {
+            let manager = ProjectManager::new();
+            let site_gen = NginxSiteGenerator::new();
+
+            match action.unwrap_or(ProjectAction::List) {
+                ProjectAction::List => {
+                    let projects = manager.get_projects()?;
+                    if projects.is_empty() {
+                        println!("No registered projects found. Use 'dotnet projects add <path>' to register one.");
+                    } else {
+                        println!(
+                            "{:<20} {:<12} {:<24} {:<8} {:<30}",
+                            "NAME", "FRAMEWORK", "DOMAIN", "SSL", "PATH"
+                        );
+                        println!("{}", "-".repeat(94));
+                        for p in projects {
+                            println!(
+                                "{:<20} {:<12} {:<24} {:<8} {:<30}",
+                                p.name,
+                                p.framework,
+                                p.effective_host(),
+                                if p.ssl_enabled { "Yes" } else { "No" },
+                                p.path
+                            );
+                        }
+                    }
+                }
+                ProjectAction::Add {
+                    path,
+                    name,
+                    host,
+                    port,
+                    framework,
+                    ssl,
+                } => {
+                    let proj_path = Path::new(&path);
+                    if !proj_path.is_dir() {
+                        return Err(anyhow::anyhow!("Directory '{}' does not exist", path));
+                    }
+
+                    let detected = FrameworkDetector::detect(proj_path);
+                    let final_name = name.unwrap_or(detected.suggested_name);
+                    let final_framework = framework.unwrap_or(detected.framework);
+                    let final_host = host.unwrap_or(detected.suggested_host);
+                    let final_port = port.or(detected.suggested_port);
+                    let final_dev_cmd = if !detected.dev_command.is_empty() {
+                        Some(detected.dev_command)
+                    } else {
+                        None
+                    };
+
+                    let mut project = ProjectInfo::new(&final_name, &path);
+                    project.framework = final_framework;
+                    project.nginx_host = Some(final_host.clone());
+                    project.dev_port = final_port;
+                    project.public_directory = detected.public_directory;
+                    project.dev_command = final_dev_cmd;
+                    project.ssl_enabled = ssl;
+
+                    manager.add_or_update_project(project.clone())?;
+                    println!("Project '{}' registered successfully.", final_name);
+
+                    // Create Nginx site & register hosts
+                    match site_gen.create_or_update_site(&project, ssl, true).await {
+                        Ok(res) => println!("{}", res.message),
+                        Err(e) => {
+                            eprintln!("Notice: Could not automatically route Nginx site: {e}")
+                        }
+                    }
+                }
+                ProjectAction::Remove {
+                    target,
+                    delete_site,
+                } => {
+                    if let Some(proj) = manager.get_project_by_identifier(&target)? {
+                        if delete_site {
+                            let _ = site_gen.remove_site(&proj).await;
+                            println!("Removed Nginx site and hosts entry for '{}'.", proj.name);
+                        }
+                        manager.delete_project(&proj.id)?;
+                        println!("Project '{}' removed.", proj.name);
+                    } else {
+                        println!("Project '{}' not found.", target);
+                    }
+                }
+                ProjectAction::Run { target } => {
+                    let proj = manager
+                        .get_project_by_identifier(&target)?
+                        .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", target))?;
+                    println!(
+                        "Launching dev server for '{}' ({:?})...",
+                        proj.name, proj.dev_command
+                    );
+                    ProjectManager::launch_dev_command(&proj)?;
+                }
+                ProjectAction::Explore { target } => {
+                    let proj = manager
+                        .get_project_by_identifier(&target)?
+                        .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", target))?;
+                    ProjectManager::open_in_explorer(Path::new(&proj.path))?;
+                }
+                ProjectAction::Terminal { target } => {
+                    let proj = manager
+                        .get_project_by_identifier(&target)?
+                        .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", target))?;
+                    ProjectManager::open_terminal(Path::new(&proj.path))?;
+                }
+                ProjectAction::Code { target } => {
+                    let proj = manager
+                        .get_project_by_identifier(&target)?
+                        .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", target))?;
+                    ProjectManager::open_in_vscode(Path::new(&proj.path))?;
+                }
+                ProjectAction::Domain {
+                    target,
+                    domain,
+                    ssl,
+                } => {
+                    let mut proj = manager
+                        .get_project_by_identifier(&target)?
+                        .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", target))?;
+
+                    // Remove old site config
+                    let _ = site_gen.remove_site(&proj).await;
+
+                    // Update domain
+                    proj.nginx_host = Some(domain.clone());
+                    proj.ssl_enabled = ssl;
+                    manager.add_or_update_project(proj.clone())?;
+
+                    // Generate new site config
+                    let res = site_gen.create_or_update_site(&proj, ssl, true).await?;
+                    println!("{}", res.message);
+                }
+            }
+        }
+        Some(Commands::PhpPool { action, size, port }) => {
+            let pool_mgr = PhpPoolManager::new();
+            match action.to_lowercase().as_str() {
+                "status" => {
+                    let workers = pool_mgr.get_pool_status(size, port)?;
+                    println!("{:<10} {:<10} {:<15}", "PORT", "PID", "STATUS");
+                    println!("{}", "-".repeat(35));
+                    for w in workers {
+                        let pid_str = w
+                            .pid
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "-".to_string());
+                        let status_str = if w.is_running { "RUNNING" } else { "STOPPED" };
+                        println!("{:<10} {:<10} {:<15}", w.port, pid_str, status_str);
+                    }
+                }
+                "stop" => {
+                    pool_mgr.stop_pool(size, port)?;
+                    println!("Stopped PHP FastCGI pool ({} workers).", size);
+                }
+                "start" => {
+                    // Try to locate php-cgi.exe in PATH or tools directory
+                    let tools_php = dotnet_core::persistence::AppPaths::tools_dir()
+                        .join("php")
+                        .join("current")
+                        .join("php-cgi.exe");
+                    let php_cgi = if tools_php.is_file() {
+                        tools_php
+                    } else {
+                        which::which("php-cgi.exe")
+                            .or_else(|_| which::which("php-cgi"))
+                            .map_err(|_| {
+                                anyhow::anyhow!("php-cgi.exe not found in PATH or tools directory")
+                            })?
+                    };
+
+                    let workers = pool_mgr.start_pool(&php_cgi, size, port)?;
+                    println!("Started PHP FastCGI pool with {} workers:", workers.len());
+                    for w in workers {
+                        println!("  • Port {}: PID {:?}", w.port, w.pid.unwrap_or_default());
+                    }
+                }
+                _ => {
+                    println!("Unknown action '{}'. Use: status, start, stop", action);
+                }
+            }
         }
         None => {
             println!("Dotnet Rust CLI Engine v{}", env!("CARGO_PKG_VERSION"));

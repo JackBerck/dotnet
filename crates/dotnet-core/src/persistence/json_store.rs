@@ -47,7 +47,7 @@ impl JsonStore {
     }
 
     /// Atomically save data to JSON file via a temporary file and rename.
-    pub fn save_atomic<T: Serialize, P: AsRef<Path>>(path: P, data: &T) -> Result<()> {
+    pub fn save_atomic<T: Serialize + ?Sized, P: AsRef<Path>>(path: P, data: &T) -> Result<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;

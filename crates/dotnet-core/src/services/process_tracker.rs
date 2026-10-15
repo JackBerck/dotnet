@@ -104,6 +104,15 @@ impl ProcessTracker {
         Ok(state.records)
     }
 
+    /// Retrieve a single tracked process record by service ID.
+    pub fn get_process(&self, service_id: &str) -> Result<Option<ProcessRecord>> {
+        let state = self.load_state()?;
+        Ok(state
+            .records
+            .into_iter()
+            .find(|r| r.service_id.eq_ignore_ascii_case(service_id)))
+    }
+
     /// Attempt to re-adopt a previously running process on application startup.
     /// Discards stale records if PID is no longer alive or reused.
     pub fn try_adopt_process(

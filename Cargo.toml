@@ -54,6 +54,7 @@ time = "0.3"
 regex = "1.11"
 which = "7.0"
 tempfile = "3.16"
+uuid = { version = "1.15", features = ["v4", "fast-rng"] }
 
 # Native Windows API (minimal, fast compilation)
 windows-sys = { version = "0.59", features = [
