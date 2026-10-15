@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use dotnet_core::catalog::CatalogLoader;
+use dotnet_core::installation::{InstalledToolStore, ToolInstaller};
 use dotnet_core::services::{HostsFileManager, LocalCertManager, NginxManager};
 use dotnet_windows::{get_active_tcp_listeners, get_service_status, TaskScheduler};
 use tracing::info;
@@ -37,6 +39,13 @@ enum Commands {
     Nginx {
         #[arg(short, long)]
         action: String,
+    },
+    /// List, install, or inspect developer tools
+    Tools {
+        #[arg(short, long)]
+        action: Option<String>,
+        #[arg(short, long)]
+        id: Option<String>,
     },
     /// Inspect Task Scheduler autostart status
     Autostart,
@@ -141,6 +150,75 @@ async fn main() -> anyhow::Result<()> {
                 }
                 _ => {
                     println!("Unknown nginx action: {}. Use: test, reload, stop", action);
+                }
+            }
+        }
+        Some(Commands::Tools { action, id }) => {
+            let store = InstalledToolStore::new();
+            let manifests = CatalogLoader::load_embedded()?;
+
+            match action.as_deref() {
+                Some("install") => {
+                    let tool_id = id.ok_or_else(|| {
+                        anyhow::anyhow!("Please provide --id <tool_id> to install")
+                    })?;
+                    let manifest = manifests
+                        .into_iter()
+                        .find(|m| m.id.eq_ignore_ascii_case(&tool_id))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Tool '{}' not found in catalog", tool_id)
+                        })?;
+                    let version = manifest
+                        .versions
+                        .first()
+                        .ok_or_else(|| anyhow::anyhow!("No version available for {}", tool_id))?;
+
+                    println!(
+                        "Installing {} v{}...",
+                        manifest.display_name, version.version
+                    );
+                    ToolInstaller::install(&manifest, version, &store, |pct| {
+                        print!(
+                            "\rProgress: [{:<20}] {:.1}%",
+                            "=".repeat((pct / 5.0) as usize),
+                            pct
+                        );
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                    })
+                    .await?;
+                    println!("\nInstallation complete.");
+                }
+                Some("uninstall") => {
+                    let tool_id = id.ok_or_else(|| {
+                        anyhow::anyhow!("Please provide --id <tool_id> to uninstall")
+                    })?;
+                    if let Some(record) = store.get_active_tool(&tool_id)? {
+                        println!(
+                            "Uninstalling {} v{}...",
+                            record.display_name, record.version
+                        );
+                        ToolInstaller::uninstall(&record, &store)?;
+                        println!("Uninstall complete.");
+                    } else {
+                        println!("Tool '{}' is not installed.", tool_id);
+                    }
+                }
+                _ => {
+                    println!(
+                        "{:<12} {:<32} {:<12} {:<15}",
+                        "ID", "DISPLAY NAME", "CATEGORY", "INSTALLED"
+                    );
+                    println!("{}", "-".repeat(75));
+                    for m in manifests {
+                        let installed_opt = store.get_active_tool(&m.id)?;
+                        let status_str = installed_opt
+                            .map(|i| format!("v{}", i.version))
+                            .unwrap_or_else(|| "Not Installed".into());
+                        println!(
+                            "{:<12} {:<32} {:<12} {:<15}",
+                            m.id, m.display_name, m.category, status_str
+                        );
+                    }
                 }
             }
         }

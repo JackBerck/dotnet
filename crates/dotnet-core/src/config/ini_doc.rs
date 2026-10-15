@@ -73,6 +73,51 @@ impl IniDocument {
         // Otherwise append at the end
         self.lines.push(format!("{} = {}", key, value));
     }
+
+    /// Enable a PHP extension (uncomments if commented, keeps if active, or appends).
+    pub fn enable_extension(&mut self, ext: &str) {
+        let expected_spaced = format!("extension = {ext}");
+        let expected_tight = format!("extension={ext}");
+
+        // Check if already active
+        for line in &self.lines {
+            let trimmed = line.trim();
+            if !trimmed.starts_with(';')
+                && !trimmed.starts_with('#')
+                && (trimmed == expected_spaced || trimmed == expected_tight)
+            {
+                return;
+            }
+        }
+
+        // Check if commented
+        for line in self.lines.iter_mut() {
+            let trimmed = line.trim();
+            if trimmed.starts_with(';') || trimmed.starts_with('#') {
+                let uncommented = trimmed[1..].trim();
+                if uncommented == expected_spaced || uncommented == expected_tight {
+                    *line = format!("extension = {ext}");
+                    return;
+                }
+            }
+        }
+
+        // Otherwise append
+        self.lines.push(format!("extension = {ext}"));
+    }
+
+    /// Check if an extension is actively enabled.
+    pub fn is_extension_enabled(&self, ext: &str) -> bool {
+        let expected_spaced = format!("extension = {ext}");
+        let expected_tight = format!("extension={ext}");
+
+        self.lines.iter().any(|line| {
+            let trimmed = line.trim();
+            !trimmed.starts_with(';')
+                && !trimmed.starts_with('#')
+                && (trimmed == expected_spaced || trimmed == expected_tight)
+        })
+    }
 }
 
 #[cfg(test)]

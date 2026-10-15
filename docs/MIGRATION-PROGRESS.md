@@ -10,7 +10,7 @@
 |---|---|---|---|
 | **Phase 0** | Workspace Scaffolding, Toolchain, Git & Docs | 🟢 **Done** | 100% |
 | **Phase 1** | Native Windows Core (IP helper, Registry, SCM, Task Scheduler, Hosts, Nginx, SSL) | 🟢 **Done** | 100% |
-| **Phase 2** | Catalog, Safe Downloader, Zip-Slip Extractor & PATH Manager | ⚪ **Planned** | 0% |
+| **Phase 2** | Catalog, Safe Downloader, Zip-Slip Extractor & PATH Manager | 🟢 **Done** | 100% |
 | **Phase 3** | Service Orchestrator, Process Tracker & Dynamic Tray | ⚪ **Planned** | 0% |
 | **Phase 4** | Config Engine (PHP INI, CLI presets) & Project Manager v2 | ⚪ **Planned** | 20% |
 | **Phase 5** | Database Portable Initializer & Docker Compose Inspector | ⚪ **Planned** | 0% |
@@ -41,12 +41,14 @@
 - [x] **P1-9:** Pure Rust Local Root CA & SAN SSL certificate generator via `rcgen` (`dotnet-core::services::cert_manager`).
 - [x] **P1-10:** Process supervisor with non-blocking pipe log redirection and safe termination (`dotnet-core::services::process_service`).
 
-### Phase 2 — Catalog & Safe Installation
-- [x] **P2-1:** Tool manifest deserialization models.
-- [ ] **P2-2:** Async streaming download with on-the-fly SHA-256 verification.
-- [ ] **P2-3:** Zip-Slip and Zip-Bomb protected extraction engine.
-- [x] **P2-4:** Windows User PATH editor (pure, tested, duplicate-free).
-- [ ] **P2-5:** Post-installation operations runner (`iniSet`, `iniEnableExtensions`, `copyIfMissing`).
+### Phase 2 — Catalog & Safe Installation (Done)
+- [x] **P2-1:** Tool manifest deserialization models and embedded catalog loader (`CatalogLoader`).
+- [x] **P2-2:** Async streaming download with on-the-fly SHA-256 verification and allowed hosts whitelisting (`ToolDownloader`).
+- [x] **P2-3:** Zip-Slip and Zip-Bomb protected extraction engine with `stripRoot` support (`SafeExtractor`).
+- [x] **P2-4:** Windows NTFS Directory Junction management (`JunctionManager`).
+- [x] **P2-5:** Post-installation operations runner (`iniSet`, `iniEnableExtensions`, `copyIfMissing`, `writeShim`) (`PostInstallRunner`).
+- [x] **P2-6:** Persistent installed tools store with atomic JSON storage (`InstalledToolStore`).
+- [x] **P2-7:** Complete tool installer and uninstaller lifecycle orchestrator (`ToolInstaller`).
 
 ### Phase 3 — Service Orchestration & Process Surveillance
 - [ ] **P3-1:** Process surveillance & PID tracking (`running-processes.json`).

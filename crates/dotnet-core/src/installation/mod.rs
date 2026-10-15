@@ -1,13 +1,15 @@
-//! Tool download, verification and installation operations
+//! Tool download, verification and installation operations.
 
-use crate::error::Result;
-use crate::models::ToolManifest;
+pub mod downloader;
+pub mod extractor;
+pub mod installer;
+pub mod junction;
+pub mod post_install;
+pub mod store;
 
-pub struct ToolInstaller;
-
-impl ToolInstaller {
-    /// Verify tool prerequisites and check integrity (stub - migration in progress)
-    pub fn verify_manifest(_manifest: &ToolManifest) -> Result<bool> {
-        Ok(true)
-    }
-}
+pub use downloader::ToolDownloader;
+pub use extractor::SafeExtractor;
+pub use installer::ToolInstaller;
+pub use junction::JunctionManager;
+pub use post_install::PostInstallRunner;
+pub use store::{InstalledToolRecord, InstalledToolStore};
