@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "php",
+  "displayName": "PHP (Hypertext Preprocessor)",
+  "category": "language",
+  "homepage": "https://www.php.net/",
+  "license": "PHP-3.01",
+  "platforms": ["win-x64"],
+  "prerequisites": ["vcredist-2015-2022-x64"],
+  "allowedHosts": ["windows.php.net"],
+  "versions": [
+    {
+      "version": "8.4.4",
+      "variant": "nts-vs17-x64",
+      "source": {
+        "type": "zip",
+        "url": "https://windows.php.net/downloads/releases/php-8.4.4-nts-Win32-vs17-x64.zip",
+        "sha256": "4b7b25b68fb000e39c5ebec5b5016e10f135111075775432658a2d33458b6ca9",
+        "stripRoot": false
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["."],
+    "envVars": {}
+  },
+  "postInstall": [
+    { "op": "copyIfMissing", "from": "php.ini-development", "to": "php.ini" },
+    { "op": "iniSet", "file": "php.ini", "key": "extension_dir", "value": "\"ext\"" },
+    { "op": "iniEnableExtensions", "file": "php.ini", "names": ["curl", "fileinfo", "mbstring", "openssl", "pdo_mysql", "pdo_pgsql", "pdo_sqlite", "sqlite3", "zip"] }
+  ],
+  "verify": {
+    "command": "php.exe",
+    "args": ["-v"],
+    "expectRegex": "^PHP (\\d+\\.\\d+\\.\\d+)"
+  }
+}

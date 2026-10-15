@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dotnet-core",
+    "crates/dotnet-windows",
+    "crates/dotnet-cli",
+    "crates/dotnet-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Dotnet Authors"]
+license = "MIT"
+repository = "https://github.com/JackBerck/dotnet"
+
+[workspace.dependencies]
+# Internal workspace crates
+dotnet-core = { path = "crates/dotnet-core" }
+dotnet-windows = { path = "crates/dotnet-windows" }
+
+# Async runtime & concurrency
+tokio = { version = "1.43", features = ["full"] }
+parking_lot = "0.12"
+futures = "0.3"
+
+# Serialization & data formats
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging & telemetry
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+
+# Network & HTTP
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+sha2 = "0.10"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+# CLI & environment
+clap = { version = "4.5", features = ["derive"] }
+dotenvy = "0.15"
+
+# Certificates & SSL
+rcgen = "0.13"
+time = "0.3"
+
+# Utilities
+regex = "1.11"
+which = "7.0"
+tempfile = "3.16"
+
+# Native Windows API (minimal, fast compilation)
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Security",
+] }

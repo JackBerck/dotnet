@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "postgres",
+  "displayName": "PostgreSQL Database Server",
+  "category": "database",
+  "homepage": "https://www.postgresql.org/",
+  "license": "PostgreSQL",
+  "platforms": ["win-x64"],
+  "prerequisites": ["vcredist-2015-2022-x64"],
+  "allowedHosts": ["get.enterprisedb.com"],
+  "versions": [
+    {
+      "version": "17.2",
+      "source": {
+        "type": "zip",
+        "url": "https://get.enterprisedb.com/postgresql/postgresql-17.2-1-windows-x64-binaries.zip",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "stripRoot": true
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["bin"],
+    "envVars": {}
+  },
+  "verify": {
+    "command": "bin/postgres.exe",
+    "args": ["--version"],
+    "expectRegex": "postgres"
+  }
+}

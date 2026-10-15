@@ -1,0 +1,38 @@
+# Rust build output
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Environment and secrets
+.env
+!.env.example
+*.local
+
+# IDE and Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.pdb
+*.obj
+*.ilk
+*.exp
+*.lib
+
+# Application runtime artifacts and logs
+/logs/
+/temp/
+*.log
+*.bak
+*.tmp

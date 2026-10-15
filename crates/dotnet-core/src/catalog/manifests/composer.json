@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "composer",
+  "displayName": "Composer (PHP Dependency Manager)",
+  "category": "package-manager",
+  "homepage": "https://getcomposer.org/",
+  "license": "MIT",
+  "platforms": ["win-x64"],
+  "prerequisites": ["php"],
+  "allowedHosts": ["getcomposer.org"],
+  "versions": [
+    {
+      "version": "2.8.5",
+      "variant": "phar",
+      "source": {
+        "type": "single-file",
+        "url": "https://getcomposer.org/download/2.8.5/composer.phar",
+        "sha256": "43015f8386e885cf83d2f2d93e18a0e88bead9a212ea0bb574d61c1ad54101e4",
+        "fileName": "composer.phar"
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["."],
+    "envVars": {}
+  },
+  "postInstall": [
+    {
+      "op": "writeShim",
+      "name": "composer.bat",
+      "content": "@echo off\r\nphp \"%~dp0composer.phar\" %*\r\n"
+    }
+  ],
+  "verify": {
+    "command": "composer.bat",
+    "args": ["--version"],
+    "expectRegex": "Composer version"
+  }
+}

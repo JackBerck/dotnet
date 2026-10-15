@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "git",
+  "displayName": "Git for Windows (MinGit)",
+  "category": "vcs",
+  "homepage": "https://gitforwindows.org/",
+  "license": "GPL-2.0",
+  "platforms": ["win-x64"],
+  "prerequisites": [],
+  "allowedHosts": ["github.com"],
+  "versions": [
+    {
+      "version": "2.48.1",
+      "variant": "mingit-x64",
+      "source": {
+        "type": "zip",
+        "url": "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/MinGit-2.48.1-64-bit.zip",
+        "sha256": "5c68f9a23b9d9df9679f22be586cb50a5879a9572620dbfa114fdb2ba97e9308",
+        "stripRoot": false
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["cmd"],
+    "envVars": {}
+  },
+  "postInstall": [],
+  "verify": {
+    "command": "git.exe",
+    "args": ["--version"],
+    "expectRegex": "^git version"
+  }
+}

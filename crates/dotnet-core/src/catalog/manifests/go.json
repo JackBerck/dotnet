@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "go",
+  "displayName": "Go Programming Language",
+  "category": "language",
+  "homepage": "https://go.dev/",
+  "license": "BSD-3-Clause",
+  "platforms": ["win-x64"],
+  "prerequisites": [],
+  "allowedHosts": ["go.dev", "golang.org"],
+  "versions": [
+    {
+      "version": "1.24.0",
+      "variant": "windows-amd64",
+      "source": {
+        "type": "zip",
+        "url": "https://go.dev/dl/go1.24.0.windows-amd64.zip",
+        "sha256": "4b68ef5cba9efdd6847253457a419eb20562e15cbbfd6f228d407ffda51f9301",
+        "stripRoot": true
+      }
+    }
+  ],
+  "layout": {
+    "binDirs": ["bin"],
+    "envVars": {}
+  },
+  "postInstall": [],
+  "verify": {
+    "command": "go.exe",
+    "args": ["version"],
+    "expectRegex": "^go version"
+  }
+}
