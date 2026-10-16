@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 //! Dotnet Desktop GUI, System Tray & API Engine runner.
 
 pub mod dashboard;
@@ -71,7 +72,8 @@ fn main() -> Result<()> {
     let _single_instance = match SingleInstanceGuard::acquire(SINGLE_INSTANCE_MUTEX) {
         Ok(Some(guard)) => guard,
         Ok(None) => {
-            info!("Another Dotnet instance is already running. Exiting cleanly.");
+            info!("Another Dotnet instance is already running. Restoring window and exiting cleanly.");
+            restore_existing_instance(args.port);
             return Ok(());
         }
         Err(e) => {
@@ -111,15 +113,25 @@ fn main() -> Result<()> {
         }
     }
 
-    let service_manager = Arc::new(AppServiceManager::new(
-        process_tracker.clone(),
-        profile_store.clone(),
-    ));
-
     let logs = Arc::new(Mutex::new(vec![
         format!("[{}] Dotnet Rust Native Desktop Engine started.", chrono_lite()),
         format!("[{}] Local Engine API Port: {}", chrono_lite(), args.port),
     ]));
+
+    let service_manager = Arc::new(AppServiceManager::new(
+        process_tracker.clone(),
+        profile_store.clone(),
+        Some(logs.clone()),
+    ));
+
+    // Build Tao Event Loop if not running in headless mode
+    let (event_loop, proxy_opt) = if !args.headless {
+        let el = EventLoopBuilder::<TrayEvent>::with_user_event().build();
+        let pr = el.create_proxy();
+        (Some(el), Some(pr))
+    } else {
+        (None, None)
+    };
 
     let dashboard_state = DashboardState {
         service_manager: service_manager.clone(),
@@ -129,6 +141,7 @@ fn main() -> Result<()> {
         php_config_manager: php_config_manager.clone(),
         logs: logs.clone(),
         port: args.port,
+        event_loop_proxy: proxy_opt.clone(),
     };
 
     // Spawn background HTTP API server
@@ -149,15 +162,14 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let event_loop = event_loop.expect("EventLoop must be initialized in non-headless mode");
+    let proxy = proxy_opt.expect("Proxy must be initialized in non-headless mode");
+
     // Initialize Win32 System Tray
     let (mut tray, tray_rx) = SystemTray::create("Dotnet - Local Dev Engine")
         .context("Failed to initialize Windows System Tray")?;
 
     info!("System Tray initialized successfully.");
-
-    // Build Tao Event Loop with custom user events
-    let event_loop = EventLoopBuilder::<TrayEvent>::with_user_event().build();
-    let proxy = event_loop.create_proxy();
 
     // Spawn tray event bridge thread
     let sm_tray = service_manager.clone();
@@ -279,13 +291,55 @@ fn main() -> Result<()> {
                 window.set_visible(false);
                 let _ = tray.show_balloon(
                     "Dotnet Dev Engine",
-                    "Aplikasi berjalan di System Tray. Klik icon untuk membuka.",
+                    "Aplikasi berjalan di background (System Tray). Klik icon tray atau jalankan dotnet-app untuk memulihkan.",
                     false,
                 );
             }
             _ => {}
         }
     });
+}
+
+fn restore_existing_instance(port: u16) {
+    use std::io::Write;
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+
+    // 1. Send HTTP restore signal to existing instance background API
+    let addr_str = format!("127.0.0.1:{}", port);
+    if let Ok(addr) = addr_str.parse::<SocketAddr>() {
+        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(800)) {
+            let req = format!(
+                "POST /api/app/restore HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                port
+            );
+            let _ = stream.write_all(req.as_bytes());
+            let _ = stream.flush();
+        }
+    }
+
+    // 2. Win32 FindWindow fallback to restore and focus
+    bring_window_to_front();
+}
+
+fn bring_window_to_front() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+
+    let title: Vec<u16> = OsStr::new("Dotnet - Development Environment Engine\0")
+        .encode_wide()
+        .collect();
+    unsafe {
+        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, SW_RESTORE);
+            ShowWindow(hwnd, SW_SHOW);
+            SetForegroundWindow(hwnd);
+        }
+    }
 }
 
 fn chrono_lite() -> String {

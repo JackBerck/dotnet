@@ -36,6 +36,7 @@ pub struct DashboardState {
     pub php_config_manager: Arc<Mutex<PhpConfigManager>>,
     pub logs: Arc<Mutex<Vec<String>>>,
     pub port: u16,
+    pub event_loop_proxy: Option<tao::event_loop::EventLoopProxy<dotnet_windows::tray::TrayEvent>>,
 }
 
 impl DashboardState {
@@ -330,24 +331,33 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
             match action {
                 "start" => match state.service_manager.start_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("Service '{id}' started.")).await;
+                        state.add_log(format!("[ACTION] Service '{id}' start berhasil.")).await;
                         HttpResponse::ok_msg(&format!("Service '{id}' started"))
                     }
-                    Err(e) => HttpResponse::error(500, &format!("Failed to start '{id}': {e}")),
+                    Err(e) => {
+                        state.add_log(format!("[ACTION] Gagal memulai service '{id}': {e}")).await;
+                        HttpResponse::error(500, &format!("Failed to start '{id}': {e}"))
+                    }
                 },
                 "stop" => match state.service_manager.stop_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("Service '{id}' stopped.")).await;
+                        state.add_log(format!("[ACTION] Service '{id}' stop berhasil.")).await;
                         HttpResponse::ok_msg(&format!("Service '{id}' stopped"))
                     }
-                    Err(e) => HttpResponse::error(500, &format!("Failed to stop '{id}': {e}")),
+                    Err(e) => {
+                        state.add_log(format!("[ACTION] Gagal menghentikan service '{id}': {e}")).await;
+                        HttpResponse::error(500, &format!("Failed to stop '{id}': {e}"))
+                    }
                 },
                 "restart" => match state.service_manager.restart_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("Service '{id}' restarted.")).await;
+                        state.add_log(format!("[ACTION] Service '{id}' restart berhasil.")).await;
                         HttpResponse::ok_msg(&format!("Service '{id}' restarted"))
                     }
-                    Err(e) => HttpResponse::error(500, &format!("Failed to restart '{id}': {e}")),
+                    Err(e) => {
+                        state.add_log(format!("[ACTION] Gagal merestart service '{id}': {e}")).await;
+                        HttpResponse::error(500, &format!("Failed to restart '{id}': {e}"))
+                    }
                 },
                 _ => HttpResponse::error(400, "Invalid service action"),
             }
@@ -355,18 +365,24 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
 
         ("POST", "/api/services/start-all") => match state.service_manager.start_all().await {
             Ok(_) => {
-                state.add_log("All services started.").await;
+                state.add_log("[BATCH] Semua service berhasil dijalankan.").await;
                 HttpResponse::ok_msg("All services started successfully")
             }
-            Err(e) => HttpResponse::error(500, &format!("Error starting all services: {e}")),
+            Err(e) => {
+                state.add_log(format!("[BATCH] Gagal menjalankan semua service: {e}")).await;
+                HttpResponse::error(500, &format!("Error starting all services: {e}"))
+            }
         },
 
         ("POST", "/api/services/stop-all") => match state.service_manager.stop_all().await {
             Ok(_) => {
-                state.add_log("All services stopped.").await;
+                state.add_log("[BATCH] Semua service berhasil dihentikan.").await;
                 HttpResponse::ok_msg("All services stopped successfully")
             }
-            Err(e) => HttpResponse::error(500, &format!("Error stopping all services: {e}")),
+            Err(e) => {
+                state.add_log(format!("[BATCH] Gagal menghentikan semua service: {e}")).await;
+                HttpResponse::error(500, &format!("Error stopping all services: {e}"))
+            }
         },
 
         ("POST", "/api/nginx/reload") => {
@@ -686,6 +702,20 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
             HttpResponse::ok_json(&*logs)
         }
 
+        ("POST", "/api/logs/clear") => {
+            let mut logs = state.logs.lock().await;
+            logs.clear();
+            HttpResponse::ok_msg("Logs cleared")
+        }
+
+        ("POST", "/api/app/restore") => {
+            if let Some(ref proxy) = state.event_loop_proxy {
+                let _ = proxy.send_event(dotnet_windows::tray::TrayEvent::OpenDashboard);
+            }
+            state.add_log("[APP] Instance aplikasi dibuka ulang - memulihkan jendela utama ke layar depan.").await;
+            HttpResponse::ok_msg("Application window restored")
+        }
+
         _ => HttpResponse::error(404, "Endpoint not found"),
     }
 }
@@ -808,6 +838,7 @@ mod tests {
         let service_manager = Arc::new(AppServiceManager::new(
             process_tracker,
             profile_store.clone(),
+            None,
         ));
         let project_manager = Arc::new(Mutex::new(
             dotnet_core::services::project_manager::ProjectManager::with_paths(
@@ -835,6 +866,7 @@ mod tests {
             php_config_manager,
             logs: Arc::new(Mutex::new(Vec::new())),
             port: 4040,
+            event_loop_proxy: None,
         }
     }
 }

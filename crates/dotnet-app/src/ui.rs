@@ -396,10 +396,20 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 
       <!-- Tab 7: Logs -->
       <section id="pane-logs" class="tab-pane">
-        <h3>System Event Logs</h3>
-        <div class="table-container" style="padding:1rem; background:#080c14; font-family:monospace; font-size:0.8rem; height:450px; overflow-y:auto;" id="log-box">
-          [System] Dotnet Rust Native Engine started successfully.<br>
-          [System] Local CA and Nginx manager active.<br>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+          <div>
+            <h3>Live Process & Service Logs</h3>
+            <p style="color:var(--text-muted); font-size:0.8rem; margin-top:0.2rem;">
+              Tracking real-time lifecycle proses, port listener, eksekusi service, dan detail error/penyebab kegagalan.
+            </p>
+          </div>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-secondary btn-sm" onclick="loadLogs()">🔄 Refresh Log</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">🧹 Bersihkan</button>
+          </div>
+        </div>
+        <div class="table-container" style="padding:1rem; background:#050811; font-family:Consolas, 'Fira Code', monospace; font-size:0.82rem; height:520px; overflow-y:auto; border:1px solid var(--border);" id="log-box">
+          <div style="color:var(--text-muted);">Memuat riwayat log...</div>
         </div>
       </section>
     </div>
@@ -444,6 +454,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
       else if (id === 'hosts') await loadHosts();
       else if (id === 'php') await loadPhpExtensions();
       else if (id === 'diagnostics') await loadDiagnostics();
+      else if (id === 'logs') await loadLogs();
     }
 
     async function loadServices() {
@@ -478,21 +489,54 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     }
 
     async function serviceAction(id, action) {
-      await fetch(`/api/services/action?id=${id}&action=${action}`, { method: 'POST' });
-      showToast(`Service ${id} ${action} triggered`);
+      showToast(`Mengirim perintah ${action} untuk ${id}...`);
+      try {
+        const res = await fetch(`/api/services/action?id=${id}&action=${action}`, { method: 'POST' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          showToast(json.message || `Service ${id} ${action} berhasil`);
+        } else {
+          showToast(`Gagal: ${json.error || 'Terjadi kesalahan'}`);
+        }
+      } catch (err) {
+        showToast(`Gagal menghubungi server: ${err}`);
+      }
       setTimeout(loadServices, 500);
+      loadLogs();
     }
 
     async function startAllServices() {
-      await fetch('/api/services/start-all', { method: 'POST' });
-      showToast('Starting all services...');
+      showToast('Memulai semua service...');
+      try {
+        const res = await fetch('/api/services/start-all', { method: 'POST' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          showToast(json.message || 'Semua service berhasil distart');
+        } else {
+          showToast(`Gagal: ${json.error || 'Terjadi kesalahan'}`);
+        }
+      } catch (err) {
+        showToast(`Error: ${err}`);
+      }
       setTimeout(loadServices, 1000);
+      loadLogs();
     }
 
     async function stopAllServices() {
-      await fetch('/api/services/stop-all', { method: 'POST' });
-      showToast('Stopping all services...');
+      showToast('Menghentikan semua service...');
+      try {
+        const res = await fetch('/api/services/stop-all', { method: 'POST' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          showToast(json.message || 'Semua service dihentikan');
+        } else {
+          showToast(`Gagal: ${json.error || 'Terjadi kesalahan'}`);
+        }
+      } catch (err) {
+        showToast(`Error: ${err}`);
+      }
       setTimeout(loadServices, 1000);
+      loadLogs();
     }
 
     async function reloadNginx() {
@@ -686,15 +730,65 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
       `).join('');
     }
 
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        if (!res.ok) return;
+        const logs = await res.json();
+        const box = document.getElementById('log-box');
+        if (!box) return;
+        if (!logs || logs.length === 0) {
+          box.innerHTML = '<div style="color:var(--text-muted); font-style:italic;">Belum ada log tercatat.</div>';
+          return;
+        }
+        box.innerHTML = logs.map(l => {
+          let color = '#94a3b8';
+          if (l.includes('BERHASIL') || l.includes('SUCCESS') || l.includes('aktif') || l.includes('started') || l.includes('running')) {
+            color = '#34d399';
+          } else if (l.includes('GAGAL') || l.includes('FAILED') || l.includes('Error') || l.includes('error') || l.includes('tidak ditemukan')) {
+            color = '#f87171';
+          } else if (l.includes('WARNING') || l.includes('Peringatan')) {
+            color = '#fbbf24';
+          } else if (l.includes('[SERVICE]') || l.includes('[BATCH]') || l.includes('[APP]') || l.includes('[ACTION]')) {
+            color = '#38bdf8';
+          }
+          return `<div style="color:${color}; margin-bottom:4px; line-height:1.4;">${escapeHtml(l)}</div>`;
+        }).join('');
+        box.scrollTop = box.scrollHeight;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function clearLogs() {
+      try {
+        await fetch('/api/logs/clear', { method: 'POST' });
+        showToast('Log riwayat dibersihkan');
+        loadLogs();
+      } catch (e) {
+        showToast('Gagal membersihkan log');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+
     // Auto-load on load
     loadServices();
-    // Poll services status every 3 seconds
+    loadLogs();
+
+    // Poll services status or live logs every 2 seconds
     setInterval(() => {
       const activePane = document.querySelector('.tab-pane.active');
       if (activePane && activePane.id === 'pane-services') {
         loadServices();
+      } else if (activePane && activePane.id === 'pane-logs') {
+        loadLogs();
       }
-    }, 3000);
+    }, 2000);
   </script>
 </body>
 </html>

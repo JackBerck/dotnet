@@ -32,6 +32,7 @@ impl AdoptExistingScanner {
         Self::scan_git(&mut list);
         Self::scan_composer(&mut list);
         Self::scan_go(&mut list);
+        Self::scan_mailpit(&mut list);
 
         list
     }
@@ -390,6 +391,43 @@ impl AdoptExistingScanner {
             list.push(DiscoveredTool {
                 tool_id: "go".into(),
                 display_name: "Go Programming Language".into(),
+                detected_version: ver,
+                directory_path: dir.to_string_lossy().to_string(),
+                exe_path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    fn scan_mailpit(list: &mut Vec<DiscoveredTool>) {
+        let candidates = [
+            r"D:\Apps\Mailpit\mailpit.exe",
+            r"C:\Apps\Mailpit\mailpit.exe",
+            r"C:\tools\mailpit\mailpit.exe",
+            r"C:\Program Files\Mailpit\mailpit.exe",
+        ];
+
+        for c_str in candidates {
+            let p = PathBuf::from(c_str);
+            if p.is_file() {
+                let ver = detect_version(&p, "version").unwrap_or_else(|| "1.27".into());
+                let dir = p.parent().unwrap_or(Path::new("."));
+                list.push(DiscoveredTool {
+                    tool_id: "mailpit".into(),
+                    display_name: "Mailpit SMTP & Web Inbox".into(),
+                    detected_version: ver,
+                    directory_path: dir.to_string_lossy().to_string(),
+                    exe_path: p.to_string_lossy().to_string(),
+                });
+                return;
+            }
+        }
+
+        if let Ok(path) = which::which("mailpit.exe").or_else(|_| which::which("mailpit")) {
+            let ver = detect_version(&path, "version").unwrap_or_else(|| "1.x".into());
+            let dir = path.parent().unwrap_or(Path::new("."));
+            list.push(DiscoveredTool {
+                tool_id: "mailpit".into(),
+                display_name: "Mailpit SMTP & Web Inbox".into(),
                 detected_version: ver,
                 directory_path: dir.to_string_lossy().to_string(),
                 exe_path: path.to_string_lossy().to_string(),

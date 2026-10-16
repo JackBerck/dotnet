@@ -30,12 +30,14 @@ pub struct AppServiceManager {
     tracker: Arc<Mutex<ProcessTracker>>,
     profile_store: Arc<Mutex<ProfileStore>>,
     services: Vec<DevServiceDescriptor>,
+    logs: Option<Arc<Mutex<Vec<String>>>>,
 }
 
 impl AppServiceManager {
     pub fn new(
         tracker: Arc<Mutex<ProcessTracker>>,
         profile_store: Arc<Mutex<ProfileStore>>,
+        logs: Option<Arc<Mutex<Vec<String>>>>,
     ) -> Self {
         let supervisor = ProcessSupervisor::new();
         let services = Self::default_descriptors();
@@ -44,6 +46,20 @@ impl AppServiceManager {
             tracker,
             profile_store,
             services,
+            logs,
+        }
+    }
+
+    async fn log(&self, msg: impl Into<String>) {
+        let text = msg.into();
+        info!("{text}");
+        if let Some(ref logs) = self.logs {
+            let mut l = logs.lock().await;
+            let line = format!("[{}] {}", chrono_lite_timestamp(), text);
+            l.push(line);
+            if l.len() > 1000 {
+                l.remove(0);
+            }
         }
     }
 
@@ -184,7 +200,23 @@ impl AppServiceManager {
     pub fn resolve_binary_path(&self, service: &DevServiceDescriptor) -> Option<PathBuf> {
         let bin_name = service.binary_name.as_deref()?;
 
-        // 1. Check Dotnet managed tools dir (%LOCALAPPDATA%\Dotnet\tools\<id>\current\<bin>)
+        // 1. Check InstalledToolStore (records from adopt_scanner or tool installer)
+        if let Ok(Some(tool)) = dotnet_core::installation::store::InstalledToolStore::new().get_active_tool(&service.id) {
+            let p = PathBuf::from(&tool.install_path);
+            if p.is_file() {
+                return Some(p);
+            }
+            let cand = p.join(bin_name);
+            if cand.is_file() {
+                return Some(cand);
+            }
+            let cand_bin = p.join("bin").join(bin_name);
+            if cand_bin.is_file() {
+                return Some(cand_bin);
+            }
+        }
+
+        // 2. Check Dotnet managed tools dir (%LOCALAPPDATA%\Dotnet\tools\<id>\current\<bin>)
         let candidate = AppPaths::tools_dir()
             .join(&service.id)
             .join("current")
@@ -193,25 +225,45 @@ impl AppServiceManager {
             return Some(candidate);
         }
 
-        // 2. Check well-known Windows host locations
+        // 3. Check well-known host locations per service
         let known_candidates: &[&str] = match service.id.as_str() {
+            "mailpit" => &[
+                r"D:\Apps\Mailpit\mailpit.exe",
+                r"C:\Apps\Mailpit\mailpit.exe",
+                r"C:\tools\mailpit\mailpit.exe",
+                r"D:\tools\mailpit\mailpit.exe",
+                r"C:\Program Files\Mailpit\mailpit.exe",
+                r"D:\Program Files\Mailpit\mailpit.exe",
+            ],
             "mysql" => &[
                 r"C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqld.exe",
                 r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe",
                 r"C:\tools\mysql\bin\mysqld.exe",
+                r"D:\Apps\MySQL\bin\mysqld.exe",
+                r"C:\Apps\MySQL\bin\mysqld.exe",
             ],
             "postgres" => &[
                 r"C:\Program Files\PostgreSQL\17\bin\postgres.exe",
                 r"C:\Program Files\PostgreSQL\16\bin\postgres.exe",
                 r"C:\tools\postgres\bin\postgres.exe",
+                r"D:\Apps\PostgreSQL\bin\postgres.exe",
             ],
             "nginx" => &[
                 r"C:\tools\nginx\nginx.exe",
                 r"C:\nginx\nginx.exe",
+                r"D:\Apps\nginx\nginx.exe",
+                r"C:\Apps\nginx\nginx.exe",
             ],
             "php-cgi" => &[
                 r"C:\tools\php85\php-cgi.exe",
                 r"C:\tools\php\php-cgi.exe",
+                r"D:\Apps\php\php-cgi.exe",
+                r"C:\Apps\php\php-cgi.exe",
+            ],
+            "redis" => &[
+                r"C:\Program Files\Memurai\memurai.exe",
+                r"C:\tools\redis\redis-server.exe",
+                r"D:\Apps\Redis\redis-server.exe",
             ],
             _ => &[],
         };
@@ -223,7 +275,19 @@ impl AppServiceManager {
             }
         }
 
-        // 3. Fallback to system PATH
+        // 4. Drive scan for D, C, E (\Apps\<id>\<bin_name> or \Apps\<name>\<bin_name>)
+        for drive in ['D', 'C', 'E'] {
+            let p1 = PathBuf::from(format!(r"{drive}:\Apps\{}\{}", service.id, bin_name));
+            if p1.is_file() {
+                return Some(p1);
+            }
+            let p2 = PathBuf::from(format!(r"{drive}:\tools\{}\{}", service.id, bin_name));
+            if p2.is_file() {
+                return Some(p2);
+            }
+        }
+
+        // 5. Fallback to system PATH
         which::which(bin_name).ok()
     }
 
@@ -235,11 +299,16 @@ impl AppServiceManager {
             .find(|s| s.id.eq_ignore_ascii_case(id))
             .ok_or_else(|| anyhow!("Unknown service '{id}'"))?;
 
+        self.log(format!("[SERVICE] Memulai '{}' (Port: {})...", svc.name, svc.port)).await;
+
         // 1. If already listening on port, it is already running
         if svc.port > 0 {
             if let Ok(Some(pid)) = get_owner_pid_for_port(svc.port) {
                 if is_pid_alive(pid) {
-                    info!("Service '{}' is already running on port {} (PID: {pid})", svc.name, svc.port);
+                    self.log(format!(
+                        "[SERVICE] '{}' sudah aktif berjalan pada port {} (PID: {})",
+                        svc.name, svc.port, pid
+                    )).await;
                     return Ok(());
                 }
             }
@@ -249,32 +318,69 @@ impl AppServiceManager {
         if let Some(ref svc_name) = svc.windows_service_name {
             let state = get_service_status(svc_name);
             if state != WindowsServiceState::Running {
+                self.log(format!(
+                    "[SERVICE] Mencoba menjalankan Windows Service '{}'...",
+                    svc_name
+                )).await;
                 if let Ok(()) = start_service(svc_name, 10) {
-                    info!("Started Windows Service '{}' for {}", svc_name, svc.name);
+                    self.log(format!(
+                        "[SERVICE] BERHASIL: Windows Service '{}' aktif.",
+                        svc_name
+                    )).await;
                     return Ok(());
+                } else {
+                    self.log(format!(
+                        "[SERVICE] Peringatan: Windows Service '{}' tidak dapat distart via SCM. Mencoba mode executable langsung...",
+                        svc_name
+                    )).await;
                 }
+            } else {
+                self.log(format!(
+                    "[SERVICE] Windows Service '{}' sudah berstatus Running.",
+                    svc_name
+                )).await;
+                return Ok(());
             }
         }
 
-        // 3. Spawn managed process
-        let exe_path = self.resolve_binary_path(svc).ok_or_else(|| {
-            anyhow!(
-                "Service binary '{:?}' not found in tools directory, Program Files, C:\\tools, or PATH",
-                svc.binary_name
-            )
-        })?;
+        // 3. Resolve executable binary
+        let exe_path = match self.resolve_binary_path(svc) {
+            Some(p) => {
+                self.log(format!(
+                    "[SERVICE] Ditemukan file executable '{}': {}",
+                    svc.name, p.display()
+                )).await;
+                p
+            }
+            None => {
+                let err = format!(
+                    "Executable binary '{:?}' tidak ditemukan di D:\\Apps, C:\\Apps, folder tools, Program Files, atau PATH sistem",
+                    svc.binary_name
+                );
+                self.log(format!("[SERVICE] GAGAL: {}", err)).await;
+                return Err(anyhow!(err));
+            }
+        };
 
         let work_dir = exe_path.parent().map(|p| p.to_path_buf());
-        let pid = self
-            .supervisor
-            .start_service(svc, exe_path.clone(), work_dir)
-            .await?;
-
-        let tracker = self.tracker.lock().await;
-        let _ = tracker.record_process(&svc.id, pid, &exe_path);
-
-        info!("Service '{}' successfully started (PID: {pid})", svc.name);
-        Ok(())
+        match self.supervisor.start_service(svc, exe_path.clone(), work_dir).await {
+            Ok(pid) => {
+                let tracker = self.tracker.lock().await;
+                let _ = tracker.record_process(&svc.id, pid, &exe_path);
+                self.log(format!(
+                    "[SERVICE] BERHASIL: '{}' berhasil dijalankan (PID: {}, Port: {})",
+                    svc.name, pid, svc.port
+                )).await;
+                Ok(())
+            }
+            Err(e) => {
+                self.log(format!(
+                    "[SERVICE] GAGAL: Gagal menjalankan process '{}': {}",
+                    svc.name, e
+                )).await;
+                Err(anyhow!(e))
+            }
+        }
     }
 
     /// Stop a service by ID (supports Windows Services and process termination).
@@ -285,12 +391,17 @@ impl AppServiceManager {
             .find(|s| s.id.eq_ignore_ascii_case(id))
             .ok_or_else(|| anyhow!("Unknown service '{id}'"))?;
 
+        self.log(format!("[SERVICE] Menghentikan '{}'...", svc.name)).await;
+
         // 1. Try Windows Service stop
         if let Some(ref svc_name) = svc.windows_service_name {
             let state = get_service_status(svc_name);
             if state == WindowsServiceState::Running {
                 let _ = stop_service(svc_name, 10);
-                info!("Stopped Windows Service '{}' for {}", svc_name, svc.name);
+                self.log(format!(
+                    "[SERVICE] Windows Service '{}' dihentikan.",
+                    svc_name
+                )).await;
             }
         }
 
@@ -301,6 +412,10 @@ impl AppServiceManager {
         if svc.port > 0 {
             if let Ok(Some(pid)) = get_owner_pid_for_port(svc.port) {
                 if is_pid_alive(pid) {
+                    self.log(format!(
+                        "[SERVICE] Menghentikan sisa process pada port {} (PID: {})...",
+                        svc.port, pid
+                    )).await;
                     let _ = terminate_pid(pid);
                 }
             }
@@ -309,12 +424,13 @@ impl AppServiceManager {
         let tracker = self.tracker.lock().await;
         let _ = tracker.remove_process(&svc.id);
 
-        info!("Service '{}' stopped", svc.name);
+        self.log(format!("[SERVICE] BERHASIL: '{}' berhasil dihentikan.", svc.name)).await;
         Ok(())
     }
 
     /// Restart a service by ID.
     pub async fn restart_service(&self, id: &str) -> Result<()> {
+        self.log(format!("[SERVICE] Memulai ulang (restart) '{}'...", id)).await;
         let _ = self.stop_service(id).await;
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         self.start_service(id).await
@@ -328,17 +444,29 @@ impl AppServiceManager {
         };
 
         let ordered = ServiceOrchestrator::order_for_startup(&self.services, &profile);
-        info!(
-            "Starting all {} services for active profile '{}'",
+        self.log(format!(
+            "[BATCH] Memulai {} service untuk profil aktif '{}'...",
             ordered.len(),
             profile.name
-        );
+        )).await;
+
+        let mut success_count = 0;
+        let mut fail_count = 0;
 
         for svc in ordered {
-            if let Err(e) = self.start_service(&svc.id).await {
-                warn!("Could not start service '{}': {e}", svc.id);
+            match self.start_service(&svc.id).await {
+                Ok(_) => success_count += 1,
+                Err(e) => {
+                    fail_count += 1;
+                    warn!("Could not start service '{}': {e}", svc.id);
+                }
             }
         }
+
+        self.log(format!(
+            "[BATCH] Selesai: {} service berhasil, {} service gagal.",
+            success_count, fail_count
+        )).await;
 
         Ok(())
     }
@@ -351,7 +479,10 @@ impl AppServiceManager {
         };
 
         let ordered = ServiceOrchestrator::order_for_shutdown(&self.services, &profile);
-        info!("Stopping all services in reverse dependency order...");
+        self.log(format!(
+            "[BATCH] Menghentikan semua service (total: {})...",
+            ordered.len()
+        )).await;
 
         for svc in ordered {
             if let Err(e) = self.stop_service(&svc.id).await {
@@ -359,6 +490,19 @@ impl AppServiceManager {
             }
         }
 
+        self.log("[BATCH] Semua service telah dihentikan.").await;
         Ok(())
     }
+}
+
+fn chrono_lite_timestamp() -> String {
+    let now = std::time::SystemTime::now();
+    let duration = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+    let hours = (secs / 3600) % 24;
+    let mins = (secs / 60) % 60;
+    let s = secs % 60;
+    format!("{:02}:{:02}:{:02}", hours, mins, s)
 }
