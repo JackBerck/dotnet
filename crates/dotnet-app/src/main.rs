@@ -186,7 +186,7 @@ fn main() -> Result<()> {
                     rt_handle.block_on(async {
                         let _ = sm.start_all().await;
                         lg.lock().await.push(format!(
-                            "[{}] Memulai semua service dari System Tray...",
+                            "[{}] Starting all services from System Tray...",
                             chrono_lite()
                         ));
                     });
@@ -197,7 +197,7 @@ fn main() -> Result<()> {
                     rt_handle.block_on(async {
                         let _ = sm.stop_all().await;
                         lg.lock().await.push(format!(
-                            "[{}] Menghentikan semua service dari System Tray...",
+                            "[{}] Stopping all services from System Tray...",
                             chrono_lite()
                         ));
                     });
@@ -208,7 +208,7 @@ fn main() -> Result<()> {
                         let nginx_dir = AppPaths::tools_dir().join("nginx").join("current");
                         let _ = NginxManager::reload_nginx(&nginx_dir).await;
                         lg.lock().await.push(format!(
-                            "[{}] Nginx reloaded dari System Tray.",
+                            "[{}] Nginx reloaded from System Tray.",
                             chrono_lite()
                         ));
                     });
@@ -226,7 +226,7 @@ fn main() -> Result<()> {
                             };
                             let _ = p.set_active_profile(next);
                             lg.lock().await.push(format!(
-                                "[{}] Profil diubah dari System Tray: {}",
+                                "[{}] Profile switched from System Tray: {}",
                                 chrono_lite(),
                                 next
                             ));
@@ -258,7 +258,7 @@ fn main() -> Result<()> {
 
     let _ = tray.show_balloon(
         "Dotnet Dev Engine",
-        "Aplikasi Desktop Native Dotnet aktif.",
+        "Dotnet Native Desktop Engine is active.",
         false,
     );
 
@@ -291,7 +291,7 @@ fn main() -> Result<()> {
                 window.set_visible(false);
                 let _ = tray.show_balloon(
                     "Dotnet Dev Engine",
-                    "Aplikasi berjalan di background (System Tray). Klik icon tray atau jalankan dotnet-app untuk memulihkan.",
+                    "Application minimized to System Tray. Click tray icon or launch Dotnet to restore.",
                     false,
                 );
             }

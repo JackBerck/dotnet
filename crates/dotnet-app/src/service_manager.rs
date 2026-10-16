@@ -7,7 +7,10 @@ use dotnet_core::services::process_service::ProcessSupervisor;
 use dotnet_core::services::process_tracker::ProcessTracker;
 use dotnet_core::services::profile_store::ProfileStore;
 use dotnet_core::services::service_orchestrator::ServiceOrchestrator;
-use dotnet_windows::service_ctrl::{get_service_status, start_service, stop_service, WindowsServiceState};
+use dotnet_windows::service_ctrl::{
+    get_service_status, resolve_installed_service_name, start_service, start_service_elevated,
+    stop_service, stop_service_elevated, terminate_pid_elevated, WindowsServiceState,
+};
 use dotnet_windows::{get_owner_pid_for_port, is_pid_alive, terminate_pid};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -155,7 +158,8 @@ impl AppServiceManager {
 
             // 2. Windows Service SCM check
             if !is_running {
-                if let Some(ref svc_name) = s.windows_service_name {
+                let resolved_name = resolve_windows_service_name(&s.id, s.windows_service_name.as_deref());
+                if let Some(ref svc_name) = resolved_name {
                     let state = get_service_status(svc_name);
                     if state == WindowsServiceState::Running {
                         is_running = true;
@@ -299,14 +303,14 @@ impl AppServiceManager {
             .find(|s| s.id.eq_ignore_ascii_case(id))
             .ok_or_else(|| anyhow!("Unknown service '{id}'"))?;
 
-        self.log(format!("[SERVICE] Memulai '{}' (Port: {})...", svc.name, svc.port)).await;
+        self.log(format!("[SERVICE] Starting '{}' on port {}...", svc.name, svc.port)).await;
 
-        // 1. If already listening on port, it is already running
+        // 1. Check if already listening on port
         if svc.port > 0 {
             if let Ok(Some(pid)) = get_owner_pid_for_port(svc.port) {
                 if is_pid_alive(pid) {
                     self.log(format!(
-                        "[SERVICE] '{}' sudah aktif berjalan pada port {} (PID: {})",
+                        "[SERVICE] '{}' is already active on port {} (PID: {})",
                         svc.name, svc.port, pid
                     )).await;
                     return Ok(());
@@ -315,31 +319,51 @@ impl AppServiceManager {
         }
 
         // 2. Try Windows Service start if configured
-        if let Some(ref svc_name) = svc.windows_service_name {
+        let resolved_svc_name = resolve_windows_service_name(&svc.id, svc.windows_service_name.as_deref());
+        if let Some(ref svc_name) = resolved_svc_name {
             let state = get_service_status(svc_name);
-            if state != WindowsServiceState::Running {
+            if state == WindowsServiceState::Running {
                 self.log(format!(
-                    "[SERVICE] Mencoba menjalankan Windows Service '{}'...",
+                    "[SERVICE] Windows Service '{}' is already running.",
                     svc_name
                 )).await;
-                if let Ok(()) = start_service(svc_name, 10) {
+                return Ok(());
+            } else if state != WindowsServiceState::NotInstalled {
+                self.log(format!(
+                    "[SERVICE] Starting Windows Service '{}' via SCM...",
+                    svc_name
+                )).await;
+
+                let mut started = start_service(svc_name, 5).is_ok();
+                if !started {
                     self.log(format!(
-                        "[SERVICE] BERHASIL: Windows Service '{}' aktif.",
+                        "[SERVICE] Direct SCM start for '{}' failed (Access Denied). Requesting Administrator elevation (UAC)...",
+                        svc_name
+                    )).await;
+                    let _ = start_service_elevated(svc_name);
+
+                    // Poll for up to 6 seconds to confirm status
+                    for _ in 0..12 {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        if get_service_status(svc_name) == WindowsServiceState::Running {
+                            started = true;
+                            break;
+                        }
+                    }
+                }
+
+                if started {
+                    self.log(format!(
+                        "[SERVICE] SUCCESS: Windows Service '{}' is now running.",
                         svc_name
                     )).await;
                     return Ok(());
                 } else {
                     self.log(format!(
-                        "[SERVICE] Peringatan: Windows Service '{}' tidak dapat distart via SCM. Mencoba mode executable langsung...",
+                        "[SERVICE] WARNING: Windows Service '{}' could not be started. Attempting standalone binary fallback...",
                         svc_name
                     )).await;
                 }
-            } else {
-                self.log(format!(
-                    "[SERVICE] Windows Service '{}' sudah berstatus Running.",
-                    svc_name
-                )).await;
-                return Ok(());
             }
         }
 
@@ -347,17 +371,17 @@ impl AppServiceManager {
         let exe_path = match self.resolve_binary_path(svc) {
             Some(p) => {
                 self.log(format!(
-                    "[SERVICE] Ditemukan file executable '{}': {}",
+                    "[SERVICE] Located executable for '{}': {}",
                     svc.name, p.display()
                 )).await;
                 p
             }
             None => {
                 let err = format!(
-                    "Executable binary '{:?}' tidak ditemukan di D:\\Apps, C:\\Apps, folder tools, Program Files, atau PATH sistem",
+                    "Executable binary '{:?}' not found in tools directory, D:\\Apps, C:\\Apps, Program Files, or system PATH",
                     svc.binary_name
                 );
-                self.log(format!("[SERVICE] GAGAL: {}", err)).await;
+                self.log(format!("[SERVICE] ERROR: {}", err)).await;
                 return Err(anyhow!(err));
             }
         };
@@ -368,14 +392,14 @@ impl AppServiceManager {
                 let tracker = self.tracker.lock().await;
                 let _ = tracker.record_process(&svc.id, pid, &exe_path);
                 self.log(format!(
-                    "[SERVICE] BERHASIL: '{}' berhasil dijalankan (PID: {}, Port: {})",
+                    "[SERVICE] SUCCESS: Started '{}' process (PID: {}, Port: {})",
                     svc.name, pid, svc.port
                 )).await;
                 Ok(())
             }
             Err(e) => {
                 self.log(format!(
-                    "[SERVICE] GAGAL: Gagal menjalankan process '{}': {}",
+                    "[SERVICE] ERROR: Failed to start process '{}': {}",
                     svc.name, e
                 )).await;
                 Err(anyhow!(e))
@@ -391,17 +415,30 @@ impl AppServiceManager {
             .find(|s| s.id.eq_ignore_ascii_case(id))
             .ok_or_else(|| anyhow!("Unknown service '{id}'"))?;
 
-        self.log(format!("[SERVICE] Menghentikan '{}'...", svc.name)).await;
+        self.log(format!("[SERVICE] Stopping '{}'...", svc.name)).await;
 
-        // 1. Try Windows Service stop
-        if let Some(ref svc_name) = svc.windows_service_name {
+        // 1. Try Windows Service stop if applicable
+        let resolved_svc_name = resolve_windows_service_name(&svc.id, svc.windows_service_name.as_deref());
+        if let Some(ref svc_name) = resolved_svc_name {
             let state = get_service_status(svc_name);
             if state == WindowsServiceState::Running {
-                let _ = stop_service(svc_name, 10);
-                self.log(format!(
-                    "[SERVICE] Windows Service '{}' dihentikan.",
-                    svc_name
-                )).await;
+                self.log(format!("[SERVICE] Stopping Windows Service '{}' via SCM...", svc_name)).await;
+                let scm_res = stop_service(svc_name, 3);
+                if let Err(e) = scm_res {
+                    self.log(format!(
+                        "[SERVICE] SCM stop for '{}' returned: {}. Requesting Administrator elevation (UAC)...",
+                        svc_name, e
+                    )).await;
+                    let _ = stop_service_elevated(svc_name);
+
+                    // Await up to 6 seconds for elevated stop to take effect
+                    for _ in 0..12 {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        if get_service_status(svc_name) != WindowsServiceState::Running {
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -413,26 +450,64 @@ impl AppServiceManager {
             if let Ok(Some(pid)) = get_owner_pid_for_port(svc.port) {
                 if is_pid_alive(pid) {
                     self.log(format!(
-                        "[SERVICE] Menghentikan sisa process pada port {} (PID: {})...",
+                        "[SERVICE] Terminating process holding port {} (PID: {})...",
                         svc.port, pid
                     )).await;
-                    let _ = terminate_pid(pid);
+                    if let Err(e) = terminate_pid(pid) {
+                        self.log(format!(
+                            "[SERVICE] Direct process termination failed: {}. Requesting elevated taskkill...",
+                            e
+                        )).await;
+                        let _ = terminate_pid_elevated(pid);
+                        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    }
                 }
             }
+        }
+
+        // 4. Strict real-status verification
+        let port_still_open = if svc.port > 0 {
+            get_owner_pid_for_port(svc.port).ok().flatten().is_some()
+        } else {
+            false
+        };
+
+        let scm_still_running = if let Some(ref svc_name) = resolved_svc_name {
+            get_service_status(svc_name) == WindowsServiceState::Running
+        } else {
+            false
+        };
+
+        if port_still_open || scm_still_running {
+            let pid_info = if svc.port > 0 {
+                get_owner_pid_for_port(svc.port)
+                    .ok()
+                    .flatten()
+                    .map(|p| format!("PID {}", p))
+                    .unwrap_or_else(|| "Unknown PID".into())
+            } else {
+                "Service process".into()
+            };
+            let err = format!(
+                "Failed to stop '{}': process is still active ({}, SCM: {:?}). Administrator privilege may be required.",
+                svc.name, pid_info, resolved_svc_name.as_deref().map(get_service_status)
+            );
+            self.log(format!("[SERVICE] ERROR: {}", err)).await;
+            return Err(anyhow!(err));
         }
 
         let tracker = self.tracker.lock().await;
         let _ = tracker.remove_process(&svc.id);
 
-        self.log(format!("[SERVICE] BERHASIL: '{}' berhasil dihentikan.", svc.name)).await;
+        self.log(format!("[SERVICE] SUCCESS: '{}' stopped cleanly.", svc.name)).await;
         Ok(())
     }
 
     /// Restart a service by ID.
     pub async fn restart_service(&self, id: &str) -> Result<()> {
-        self.log(format!("[SERVICE] Memulai ulang (restart) '{}'...", id)).await;
+        self.log(format!("[SERVICE] Restarting service '{}'...", id)).await;
         let _ = self.stop_service(id).await;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         self.start_service(id).await
     }
 
@@ -445,7 +520,7 @@ impl AppServiceManager {
 
         let ordered = ServiceOrchestrator::order_for_startup(&self.services, &profile);
         self.log(format!(
-            "[BATCH] Memulai {} service untuk profil aktif '{}'...",
+            "[BATCH] Starting {} services for active profile '{}'...",
             ordered.len(),
             profile.name
         )).await;
@@ -464,7 +539,7 @@ impl AppServiceManager {
         }
 
         self.log(format!(
-            "[BATCH] Selesai: {} service berhasil, {} service gagal.",
+            "[BATCH] Batch startup summary: {} succeeded, {} failed.",
             success_count, fail_count
         )).await;
 
@@ -480,7 +555,7 @@ impl AppServiceManager {
 
         let ordered = ServiceOrchestrator::order_for_shutdown(&self.services, &profile);
         self.log(format!(
-            "[BATCH] Menghentikan semua service (total: {})...",
+            "[BATCH] Stopping all services (total: {})...",
             ordered.len()
         )).await;
 
@@ -490,9 +565,34 @@ impl AppServiceManager {
             }
         }
 
-        self.log("[BATCH] Semua service telah dihentikan.").await;
+        self.log("[BATCH] All services have been stopped.").await;
         Ok(())
     }
+}
+
+fn resolve_windows_service_name(id: &str, configured: Option<&str>) -> Option<String> {
+    let candidates: &[&str] = match id {
+        "mysql" => &["MySQL84", "MySQL80", "MySQL", "mysql"],
+        "postgres" => &[
+            "postgresql-x64-17",
+            "postgresql-x64-16",
+            "postgresql-x64-15",
+            "postgresql-x64-14",
+            "PostgreSQL",
+            "postgres",
+        ],
+        "redis" => &["Memurai", "Redis", "redis"],
+        _ => &[],
+    };
+
+    if let Some(cfg) = configured {
+        let status = get_service_status(cfg);
+        if status != WindowsServiceState::NotInstalled {
+            return Some(cfg.to_string());
+        }
+    }
+
+    resolve_installed_service_name(candidates)
 }
 
 fn chrono_lite_timestamp() -> String {

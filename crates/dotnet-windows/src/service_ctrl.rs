@@ -13,6 +13,8 @@ use windows_sys::Win32::System::Services::{
     SERVICE_QUERY_STATUS, SERVICE_RUNNING, SERVICE_START, SERVICE_START_PENDING,
     SERVICE_STATUS_PROCESS, SERVICE_STOP, SERVICE_STOPPED, SERVICE_STOP_PENDING,
 };
+use windows_sys::Win32::UI::Shell::ShellExecuteW;
+use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowsServiceState {
@@ -233,4 +235,72 @@ pub fn stop_service(service_name: &str, timeout_secs: u64) -> Result<()> {
             std::thread::sleep(Duration::from_millis(200));
         }
     }
+}
+
+/// Trigger elevated (UAC) start of a Windows Service via net.exe
+pub fn start_service_elevated(service_name: &str) -> bool {
+    let wide_verb = to_wide("runas");
+    let wide_file = to_wide("net.exe");
+    let wide_params = to_wide(&format!("start \"{}\"", service_name));
+
+    unsafe {
+        let res = ShellExecuteW(
+            std::ptr::null_mut(),
+            wide_verb.as_ptr(),
+            wide_file.as_ptr(),
+            wide_params.as_ptr(),
+            std::ptr::null(),
+            SW_HIDE,
+        );
+        (res as usize) > 32
+    }
+}
+
+/// Trigger elevated (UAC) stop of a Windows Service via net.exe
+pub fn stop_service_elevated(service_name: &str) -> bool {
+    let wide_verb = to_wide("runas");
+    let wide_file = to_wide("net.exe");
+    let wide_params = to_wide(&format!("stop \"{}\"", service_name));
+
+    unsafe {
+        let res = ShellExecuteW(
+            std::ptr::null_mut(),
+            wide_verb.as_ptr(),
+            wide_file.as_ptr(),
+            wide_params.as_ptr(),
+            std::ptr::null(),
+            SW_HIDE,
+        );
+        (res as usize) > 32
+    }
+}
+
+/// Force terminate a PID with Administrator privileges via elevated taskkill
+pub fn terminate_pid_elevated(pid: u32) -> bool {
+    let wide_verb = to_wide("runas");
+    let wide_file = to_wide("taskkill.exe");
+    let wide_params = to_wide(&format!("/F /T /PID {}", pid));
+
+    unsafe {
+        let res = ShellExecuteW(
+            std::ptr::null_mut(),
+            wide_verb.as_ptr(),
+            wide_file.as_ptr(),
+            wide_params.as_ptr(),
+            std::ptr::null(),
+            SW_HIDE,
+        );
+        (res as usize) > 32
+    }
+}
+
+/// Dynamically find which service name is installed on this host from candidates
+pub fn resolve_installed_service_name(candidates: &[&str]) -> Option<String> {
+    for &name in candidates {
+        let status = get_service_status(name);
+        if status != WindowsServiceState::NotInstalled {
+            return Some(name.to_string());
+        }
+    }
+    None
 }

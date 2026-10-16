@@ -331,31 +331,31 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
             match action {
                 "start" => match state.service_manager.start_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("[ACTION] Service '{id}' start berhasil.")).await;
+                        state.add_log(format!("[ACTION] Service '{id}' start succeeded.")).await;
                         HttpResponse::ok_msg(&format!("Service '{id}' started"))
                     }
                     Err(e) => {
-                        state.add_log(format!("[ACTION] Gagal memulai service '{id}': {e}")).await;
+                        state.add_log(format!("[ACTION] Failed to start service '{id}': {e}")).await;
                         HttpResponse::error(500, &format!("Failed to start '{id}': {e}"))
                     }
                 },
                 "stop" => match state.service_manager.stop_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("[ACTION] Service '{id}' stop berhasil.")).await;
+                        state.add_log(format!("[ACTION] Service '{id}' stop succeeded.")).await;
                         HttpResponse::ok_msg(&format!("Service '{id}' stopped"))
                     }
                     Err(e) => {
-                        state.add_log(format!("[ACTION] Gagal menghentikan service '{id}': {e}")).await;
+                        state.add_log(format!("[ACTION] Failed to stop service '{id}': {e}")).await;
                         HttpResponse::error(500, &format!("Failed to stop '{id}': {e}"))
                     }
                 },
                 "restart" => match state.service_manager.restart_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("[ACTION] Service '{id}' restart berhasil.")).await;
+                        state.add_log(format!("[ACTION] Service '{id}' restart succeeded.")).await;
                         HttpResponse::ok_msg(&format!("Service '{id}' restarted"))
                     }
                     Err(e) => {
-                        state.add_log(format!("[ACTION] Gagal merestart service '{id}': {e}")).await;
+                        state.add_log(format!("[ACTION] Failed to restart service '{id}': {e}")).await;
                         HttpResponse::error(500, &format!("Failed to restart '{id}': {e}"))
                     }
                 },
@@ -365,22 +365,22 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
 
         ("POST", "/api/services/start-all") => match state.service_manager.start_all().await {
             Ok(_) => {
-                state.add_log("[BATCH] Semua service berhasil dijalankan.").await;
+                state.add_log("[BATCH] All services started successfully.").await;
                 HttpResponse::ok_msg("All services started successfully")
             }
             Err(e) => {
-                state.add_log(format!("[BATCH] Gagal menjalankan semua service: {e}")).await;
+                state.add_log(format!("[BATCH] Failed to start all services: {e}")).await;
                 HttpResponse::error(500, &format!("Error starting all services: {e}"))
             }
         },
 
         ("POST", "/api/services/stop-all") => match state.service_manager.stop_all().await {
             Ok(_) => {
-                state.add_log("[BATCH] Semua service berhasil dihentikan.").await;
+                state.add_log("[BATCH] All services stopped.").await;
                 HttpResponse::ok_msg("All services stopped successfully")
             }
             Err(e) => {
-                state.add_log(format!("[BATCH] Gagal menghentikan semua service: {e}")).await;
+                state.add_log(format!("[BATCH] Failed to stop all services: {e}")).await;
                 HttpResponse::error(500, &format!("Error stopping all services: {e}"))
             }
         },
@@ -712,7 +712,7 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
             if let Some(ref proxy) = state.event_loop_proxy {
                 let _ = proxy.send_event(dotnet_windows::tray::TrayEvent::OpenDashboard);
             }
-            state.add_log("[APP] Instance aplikasi dibuka ulang - memulihkan jendela utama ke layar depan.").await;
+            state.add_log("[APP] Duplicate instance launched - restored main window to foreground.").await;
             HttpResponse::ok_msg("Application window restored")
         }
 

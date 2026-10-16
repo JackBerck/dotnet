@@ -5,6 +5,10 @@ use crate::installation::store::{InstalledToolRecord, InstalledToolStore};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone)]
 pub struct DiscoveredTool {
@@ -437,7 +441,12 @@ impl AdoptExistingScanner {
 }
 
 fn detect_version(exe: &Path, arg: &str) -> Option<String> {
-    let output = Command::new(exe).arg(arg).output().ok()?;
+    let mut cmd = Command::new(exe);
+    cmd.arg(arg);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout).to_string()
         + &String::from_utf8_lossy(&output.stderr);
 

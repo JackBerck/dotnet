@@ -300,12 +300,12 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
       <section id="pane-tools" class="tab-pane">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
           <div>
-            <h3>Tools Pengembang & Runtime Terpasang</h3>
+            <h3>Installed Developer Tools & Runtimes</h3>
             <p style="color:var(--text-muted); font-size:0.8rem; margin-top:0.2rem;">
-              Semua tools yang terpasang di sistem Windows Anda otomatis terdeteksi dan disinkronkan ke environment Dotnet.
+              All developer tools and runtimes detected on your Windows system are automatically synchronized into the Dotnet environment.
             </p>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="scanAdoptTools()">🔍 Pindai Ulang Tools Sistem</button>
+          <button class="btn btn-secondary btn-sm" onclick="scanAdoptTools()">🔍 Rescan System Tools</button>
         </div>
         <div class="grid" id="tools-grid">
           <!-- Rendered dynamically -->
@@ -400,16 +400,16 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
           <div>
             <h3>Live Process & Service Logs</h3>
             <p style="color:var(--text-muted); font-size:0.8rem; margin-top:0.2rem;">
-              Tracking real-time lifecycle proses, port listener, eksekusi service, dan detail error/penyebab kegagalan.
+              Real-time lifecycle tracking for service processes, TCP port listeners, UAC elevation, and error diagnostics.
             </p>
           </div>
           <div style="display:flex; gap:0.5rem;">
-            <button class="btn btn-secondary btn-sm" onclick="loadLogs()">🔄 Refresh Log</button>
-            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">🧹 Bersihkan</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadLogs()">🔄 Refresh Logs</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">🧹 Clear Logs</button>
           </div>
         </div>
         <div class="table-container" style="padding:1rem; background:#050811; font-family:Consolas, 'Fira Code', monospace; font-size:0.82rem; height:520px; overflow-y:auto; border:1px solid var(--border);" id="log-box">
-          <div style="color:var(--text-muted);">Memuat riwayat log...</div>
+          <div style="color:var(--text-muted);">Loading log history...</div>
         </div>
       </section>
     </div>
@@ -489,31 +489,31 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     }
 
     async function serviceAction(id, action) {
-      showToast(`Mengirim perintah ${action} untuk ${id}...`);
+      showToast(`Sending ${action} command for ${id}...`);
       try {
         const res = await fetch(`/api/services/action?id=${id}&action=${action}`, { method: 'POST' });
         const json = await res.json().catch(() => ({}));
         if (res.ok) {
-          showToast(json.message || `Service ${id} ${action} berhasil`);
+          showToast(json.message || `Service ${id} ${action} succeeded`);
         } else {
-          showToast(`Gagal: ${json.error || 'Terjadi kesalahan'}`);
+          showToast(`Error: ${json.error || 'Operation failed'}`);
         }
       } catch (err) {
-        showToast(`Gagal menghubungi server: ${err}`);
+        showToast(`Failed to connect to server: ${err}`);
       }
       setTimeout(loadServices, 500);
       loadLogs();
     }
 
     async function startAllServices() {
-      showToast('Memulai semua service...');
+      showToast('Starting all services...');
       try {
         const res = await fetch('/api/services/start-all', { method: 'POST' });
         const json = await res.json().catch(() => ({}));
         if (res.ok) {
-          showToast(json.message || 'Semua service berhasil distart');
+          showToast(json.message || 'All services started successfully');
         } else {
-          showToast(`Gagal: ${json.error || 'Terjadi kesalahan'}`);
+          showToast(`Error: ${json.error || 'Operation failed'}`);
         }
       } catch (err) {
         showToast(`Error: ${err}`);
@@ -523,14 +523,14 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     }
 
     async function stopAllServices() {
-      showToast('Menghentikan semua service...');
+      showToast('Stopping all services...');
       try {
         const res = await fetch('/api/services/stop-all', { method: 'POST' });
         const json = await res.json().catch(() => ({}));
         if (res.ok) {
-          showToast(json.message || 'Semua service dihentikan');
+          showToast(json.message || 'All services stopped');
         } else {
-          showToast(`Gagal: ${json.error || 'Terjadi kesalahan'}`);
+          showToast(`Error: ${json.error || 'Operation failed'}`);
         }
       } catch (err) {
         showToast(`Error: ${err}`);
@@ -599,13 +599,13 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     }
 
     async function scanAdoptTools() {
-      showToast('Memindai tools di sistem Windows...');
+      showToast('Scanning developer tools on Windows...');
       try {
         const res = await fetch('/api/tools/scan', { method: 'POST' });
         const data = await res.json();
-        showToast(data.message || 'Pemindaian tools selesai!');
+        showToast(data.message || 'Tools scan completed!');
       } catch (e) {
-        showToast('Gagal memindai tools');
+        showToast('Failed to scan tools');
       }
       setTimeout(loadTools, 500);
     }
@@ -624,14 +624,14 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             </span>
           </div>
           <div class="card-meta">
-            <div class="card-meta-row"><span>Kategori:</span><span>${t.category}</span></div>
+            <div class="card-meta-row"><span>Category:</span><span>${t.category}</span></div>
             <div class="card-meta-row"><span>ID:</span><span class="code-tag">${t.id}</span></div>
-            ${t.is_installed ? '<div class="card-meta-row"><span style="color:#10b981; font-weight:600;">✓ Terpasang di Sistem</span></div>' : ''}
+            ${t.is_installed ? '<div class="card-meta-row"><span style="color:#10b981; font-weight:600;">✓ Installed on System</span></div>' : ''}
           </div>
           <div class="card-actions">
             ${t.is_installed
-              ? `<button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" disabled>✓ Siap Digunakan</button>`
-              : `<button class="btn btn-primary btn-sm" style="width:100%; justify-content:center;" onclick="installTool('${t.id}')">Pasang Tool</button>`
+              ? `<button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" disabled>✓ Ready to Use</button>`
+              : `<button class="btn btn-primary btn-sm" style="width:100%; justify-content:center;" onclick="installTool('${t.id}')">Install Tool</button>`
             }
           </div>
         </div>
@@ -738,16 +738,16 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
         const box = document.getElementById('log-box');
         if (!box) return;
         if (!logs || logs.length === 0) {
-          box.innerHTML = '<div style="color:var(--text-muted); font-style:italic;">Belum ada log tercatat.</div>';
+          box.innerHTML = '<div style="color:var(--text-muted); font-style:italic;">No event logs recorded yet.</div>';
           return;
         }
         box.innerHTML = logs.map(l => {
           let color = '#94a3b8';
-          if (l.includes('BERHASIL') || l.includes('SUCCESS') || l.includes('aktif') || l.includes('started') || l.includes('running')) {
+          if (l.includes('SUCCESS') || l.includes('started') || l.includes('running') || l.includes('active')) {
             color = '#34d399';
-          } else if (l.includes('GAGAL') || l.includes('FAILED') || l.includes('Error') || l.includes('error') || l.includes('tidak ditemukan')) {
+          } else if (l.includes('ERROR') || l.includes('FAILED') || l.includes('Failed') || l.includes('error') || l.includes('not found')) {
             color = '#f87171';
-          } else if (l.includes('WARNING') || l.includes('Peringatan')) {
+          } else if (l.includes('WARNING') || l.includes('Warning') || l.includes('COLLISION')) {
             color = '#fbbf24';
           } else if (l.includes('[SERVICE]') || l.includes('[BATCH]') || l.includes('[APP]') || l.includes('[ACTION]')) {
             color = '#38bdf8';
@@ -763,10 +763,10 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     async function clearLogs() {
       try {
         await fetch('/api/logs/clear', { method: 'POST' });
-        showToast('Log riwayat dibersihkan');
+        showToast('Logs cleared');
         loadLogs();
       } catch (e) {
-        showToast('Gagal membersihkan log');
+        showToast('Failed to clear logs');
       }
     }
 
