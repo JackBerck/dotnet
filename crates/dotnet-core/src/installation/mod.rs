@@ -1,5 +1,6 @@
 //! Tool download, verification and installation operations.
 
+pub mod adopt_scanner;
 pub mod downloader;
 pub mod extractor;
 pub mod installer;
@@ -7,6 +8,7 @@ pub mod junction;
 pub mod post_install;
 pub mod store;
 
+pub use adopt_scanner::{AdoptExistingScanner, DiscoveredTool};
 pub use downloader::ToolDownloader;
 pub use extractor::SafeExtractor;
 pub use installer::ToolInstaller;

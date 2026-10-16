@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use dotnet_core::catalog::CatalogLoader;
-use dotnet_core::installation::{InstalledToolStore, ToolInstaller};
+use dotnet_core::installation::{AdoptExistingScanner, InstalledToolStore, ToolInstaller};
 use dotnet_core::models::ProjectInfo;
 use dotnet_core::services::{
     DatabaseInitializer, DockerPortChecker, FrameworkDetector, HostsFileManager, LocalCertManager,
@@ -342,6 +342,11 @@ async fn main() -> anyhow::Result<()> {
                     } else {
                         println!("Tool '{}' is not installed.", tool_id);
                     }
+                }
+                Some("adopt") | Some("scan") => {
+                    println!("Memindai developer tools yang terpasang di sistem Windows...");
+                    let count = AdoptExistingScanner::adopt_all_discovered(&store)?;
+                    println!("Selesai: {} tool terdeteksi dan diadopsi ke environment Dotnet.", count);
                 }
                 _ => {
                     println!(
@@ -767,9 +772,186 @@ async fn main() -> anyhow::Result<()> {
             println!("{msg}");
         }
         None => {
-            println!("Dotnet Rust CLI Engine v{}", env!("CARGO_PKG_VERSION"));
-            println!("Run with --help to view available commands.");
+            run_interactive_cli_dashboard().await?;
         }
+    }
+
+    Ok(())
+}
+
+async fn run_interactive_cli_dashboard() -> anyhow::Result<()> {
+    let store = InstalledToolStore::new();
+    let _ = AdoptExistingScanner::adopt_all_discovered(&store);
+
+    loop {
+        println!("\n{}", "=".repeat(88));
+        println!(
+            " DOTNET - LOCAL DEV RUNTIME MANAGER (RUST ENGINE v{})",
+            env!("CARGO_PKG_VERSION")
+        );
+        println!("{}", "=".repeat(88));
+
+        // 1. Services Status Overview
+        println!("\n[ STATUS LAYANAN RUNTIME ]");
+        println!("{}", "-".repeat(88));
+        println!(
+            "{:<14} {:<24} {:<8} {:<10} PROSES / SERVICE",
+            "STATUS", "LAYANAN", "PORT", "PID"
+        );
+        println!("{}", "-".repeat(88));
+
+        let svc_list = [
+            ("Nginx Web Server", 80, "nginx.exe"),
+            ("MySQL Server", 3306, "mysqld.exe (MySQL84)"),
+            ("PostgreSQL Database", 5432, "postgres.exe (postgresql-x64-17)"),
+            ("Redis / Memurai", 6379, "memurai.exe (Port 6379)"),
+            ("PHP FastCGI Engine", 9000, "php-cgi.exe (Port 9000)"),
+            ("Mailpit SMTP", 8025, "mailpit.exe (Port 8025)"),
+        ];
+
+        for (name, port, desc) in &svc_list {
+            let (is_running, pid) = match dotnet_windows::get_owner_pid_for_port(*port) {
+                Ok(Some(p)) => (true, Some(p)),
+                _ => (false, None),
+            };
+
+            let status_str = if is_running { "[RUNNING]" } else { "[STOPPED]" };
+            let pid_str = pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
+            println!(
+                "{:<14} {:<24} {:<8} {:<10} {}",
+                status_str, name, port, pid_str, desc
+            );
+        }
+
+        // 2. Adopted & Detected Tools
+        println!("\n[ TOOLS TERPASANG DI SISTEM & SIAP DIGUNAKAN ]");
+        println!("{}", "-".repeat(88));
+        println!(
+            "{:<12} {:<24} {:<12} {:<10} LOKASI",
+            "TOOL ID", "NAMA", "VERSI", "STATUS"
+        );
+        println!("{}", "-".repeat(88));
+
+        let tools = store.load_all().unwrap_or_default();
+        if tools.is_empty() {
+            println!("Belum ada tool teradopsi. Pilih menu [2] untuk memindai sistem.");
+        } else {
+            for t in &tools {
+                let st = if t.is_active { "[AKTIF]" } else { "[NONAKTIF]" };
+                println!(
+                    "{:<12} {:<24} {:<12} {:<10} {}",
+                    t.tool_id, t.display_name, t.version, st, t.install_path
+                );
+            }
+        }
+
+        // 3. Interactive Menu
+        println!("\n{}", "=".repeat(88));
+        println!(" PILIHAN MENU:");
+        println!("   [1] Buka Native Desktop GUI App (dotnet-app.exe)");
+        println!("   [2] Pindai & Adopsi Tools Sistem (Scan & Adopt Tools)");
+        println!("   [3] Periksa Port Aktif (TCP Port Listeners)");
+        println!("   [4] Jalankan Test Konfigurasi Nginx");
+        println!("   [5] Muat Ulang Nginx (Reload)");
+        println!("   [R] Refresh Tampilan");
+        println!("   [Q] Keluar");
+        println!("{}", "=".repeat(88));
+        print!(" Masukkan pilihan [1-5, R, Q]: ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+
+        let mut input = String::new();
+        if std::io::stdin().read_line(&mut input).is_err() {
+            break;
+        }
+
+        let choice = input.trim();
+        match choice {
+            "1" => {
+                println!("\nMeluncurkan Native Desktop GUI App (dotnet-app.exe)...");
+                let exe_dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                    .unwrap_or_else(|| PathBuf::from("."));
+                let app_exe = exe_dir.join("dotnet-app.exe");
+                if app_exe.exists() {
+                    let _ = std::process::Command::new(&app_exe).spawn();
+                    println!("Native Desktop GUI App diluncurkan.");
+                } else {
+                    println!(
+                        "File '{}' tidak ditemukan. Menjalankan via cargo...",
+                        app_exe.display()
+                    );
+                    let _ = std::process::Command::new("cargo")
+                        .args(["run", "-p", "dotnet-app"])
+                        .spawn();
+                }
+            }
+            "2" => {
+                println!("\nMemindai lingkungan lokal Windows...");
+                match AdoptExistingScanner::adopt_all_discovered(&store) {
+                    Ok(c) => println!("Selesai: {} tool baru diadopsi.", c),
+                    Err(e) => println!("Error saat memindai: {}", e),
+                }
+            }
+            "3" => {
+                println!("\n[ DAFTAR PORT TCP AKTIF ]");
+                println!("{:<10} {:<10} {:<30}", "PORT", "PID", "LOCAL ADDRESS");
+                println!("{}", "-".repeat(52));
+                if let Ok(listeners) = dotnet_windows::get_active_tcp_listeners() {
+                    for entry in listeners {
+                        if entry.port == 80
+                            || entry.port == 443
+                            || entry.port == 3306
+                            || entry.port == 5432
+                            || entry.port == 6379
+                            || entry.port == 8025
+                            || entry.port == 9000
+                            || (3000..=9999).contains(&entry.port)
+                        {
+                            println!(
+                                "{:<10} {:<10} {:<30}",
+                                entry.port, entry.owning_pid, entry.local_addr
+                            );
+                        }
+                    }
+                }
+            }
+            "4" => {
+                let nginx_dir = NginxManager::default_nginx_dir();
+                println!("\nMemvalidasi konfigurasi Nginx di {}...", nginx_dir.display());
+                match NginxManager::validate_config(&nginx_dir).await {
+                    Ok((ok, out)) => {
+                        println!("Hasil: {}\n{}", if ok { "PASSED" } else { "FAILED" }, out);
+                    }
+                    Err(e) => println!("Error: {}", e),
+                }
+            }
+            "5" => {
+                let nginx_dir = NginxManager::default_nginx_dir();
+                println!("\nReloading Nginx...");
+                match NginxManager::reload_nginx(&nginx_dir).await {
+                    Ok((ok, out)) => {
+                        println!("Hasil: {}\n{}", if ok { "SUCCESS" } else { "FAILED" }, out);
+                    }
+                    Err(e) => println!("Error: {}", e),
+                }
+            }
+            "r" | "R" => {
+                continue;
+            }
+            "q" | "Q" => {
+                println!("\nKeluar dari Dotnet CLI.");
+                break;
+            }
+            _ => {
+                println!("\nPilihan tidak dikenal. Masukkan 1-5, R, atau Q.");
+            }
+        }
+
+        print!("\nTekan Enter untuk melanjutkan...");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut pause = String::new();
+        let _ = std::io::stdin().read_line(&mut pause);
     }
 
     Ok(())
