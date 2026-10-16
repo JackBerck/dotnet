@@ -536,7 +536,33 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
                     installed_version: inst.map(|i| i.version.clone()).unwrap_or_default(),
                 });
             }
+            for inst in installed {
+                if !items.iter().any(|i| i.id.eq_ignore_ascii_case(&inst.tool_id)) {
+                    items.push(ToolDashboardItem {
+                        id: inst.tool_id.clone(),
+                        display_name: inst.display_name.clone(),
+                        category: "system".into(),
+                        latest_version: inst.version.clone(),
+                        is_installed: true,
+                        installed_version: inst.version.clone(),
+                    });
+                }
+            }
+
             HttpResponse::ok_json(&items)
+        }
+
+        ("POST", "/api/tools/scan") => {
+            let tool_store = state.tool_store.lock().await;
+            match dotnet_core::installation::AdoptExistingScanner::adopt_all_discovered(&tool_store) {
+                Ok(count) => {
+                    state
+                        .add_log(format!("Adopted {count} local tools from system."))
+                        .await;
+                    HttpResponse::ok_msg(&format!("Adopted {count} tools"))
+                }
+                Err(e) => HttpResponse::error(500, &format!("Scan error: {e}")),
+            }
         }
 
         ("POST", "/api/tools/install") => {

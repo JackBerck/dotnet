@@ -298,6 +298,15 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 
       <!-- Tab 3: Tools Catalog -->
       <section id="pane-tools" class="tab-pane">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+          <div>
+            <h3>Tools Pengembang & Runtime Terpasang</h3>
+            <p style="color:var(--text-muted); font-size:0.8rem; margin-top:0.2rem;">
+              Semua tools yang terpasang di sistem Windows Anda otomatis terdeteksi dan disinkronkan ke environment Dotnet.
+            </p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="scanAdoptTools()">🔍 Pindai Ulang Tools Sistem</button>
+        </div>
         <div class="grid" id="tools-grid">
           <!-- Rendered dynamically -->
         </div>
@@ -545,6 +554,18 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
       }
     }
 
+    async function scanAdoptTools() {
+      showToast('Memindai tools di sistem Windows...');
+      try {
+        const res = await fetch('/api/tools/scan', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message || 'Pemindaian tools selesai!');
+      } catch (e) {
+        showToast('Gagal memindai tools');
+      }
+      setTimeout(loadTools, 500);
+    }
+
     async function loadTools() {
       const res = await fetch('/api/tools');
       const data = await res.json();
@@ -554,17 +575,19 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
           <div class="card-header">
             <div class="card-title">${t.display_name}</div>
             <span class="badge ${t.is_installed ? 'badge-running' : 'badge-stopped'}">
+              <span class="badge-dot"></span>
               ${t.is_installed ? 'v' + t.installed_version : 'NOT INSTALLED'}
             </span>
           </div>
           <div class="card-meta">
-            <div class="card-meta-row"><span>Category:</span><span>${t.category}</span></div>
-            <div class="card-meta-row"><span>Available:</span><span class="code-tag">v${t.latest_version}</span></div>
+            <div class="card-meta-row"><span>Kategori:</span><span>${t.category}</span></div>
+            <div class="card-meta-row"><span>ID:</span><span class="code-tag">${t.id}</span></div>
+            ${t.is_installed ? '<div class="card-meta-row"><span style="color:#10b981; font-weight:600;">✓ Terpasang di Sistem</span></div>' : ''}
           </div>
           <div class="card-actions">
             ${t.is_installed
-              ? `<button class="btn btn-danger btn-sm" onclick="uninstallTool('${t.id}')">Uninstall</button>`
-              : `<button class="btn btn-primary btn-sm" onclick="installTool('${t.id}')">Install</button>`
+              ? `<button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" disabled>✓ Siap Digunakan</button>`
+              : `<button class="btn btn-primary btn-sm" style="width:100%; justify-content:center;" onclick="installTool('${t.id}')">Pasang Tool</button>`
             }
           </div>
         </div>

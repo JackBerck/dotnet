@@ -16,12 +16,14 @@ use dotnet_core::services::profile_store::ProfileStore;
 use dotnet_core::services::project_manager::ProjectManager;
 use dotnet_windows::single_instance::SingleInstanceGuard;
 use dotnet_windows::tray::{SystemTray, TrayEvent};
-use dotnet_windows::{NativeMainWindow, NativeWindowEvent};
 use service_manager::AppServiceManager;
 use std::sync::Arc;
+use tao::event::{Event, WindowEvent};
+use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::window::WindowBuilder;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
-use windows_sys::Win32::UI::WindowsAndMessaging::PostQuitMessage;
+use wry::WebViewBuilder;
 
 const SINGLE_INSTANCE_MUTEX: &str = "Global\\Dotnet_SingleInstance_Mutex";
 const DEFAULT_PORT: u16 = 4040;
@@ -58,152 +60,7 @@ fn parse_args() -> CliArgs {
     }
 }
 
-async fn render_dashboard_content(
-    tab: usize,
-    sm: &AppServiceManager,
-    tool_store: &Arc<Mutex<InstalledToolStore>>,
-    profile_store: &Arc<Mutex<ProfileStore>>,
-    logs: &Arc<Mutex<Vec<String>>>,
-) -> String {
-    let mut out = String::with_capacity(4096);
-
-    let active_profile = {
-        let p = profile_store.lock().await;
-        p.get_active_profile()
-            .map(|p| p.name)
-            .unwrap_or_else(|_| "Standalone (Portable Native)".to_string())
-    };
-
-    out.push_str("========================================================================================================\r\n");
-    out.push_str(&format!(
-        " DOTNET - NATIVE WINDOWS DEV RUNTIME MANAGER (RUST v{}) | PROFIL: {}\r\n",
-        env!("CARGO_PKG_VERSION"),
-        active_profile.to_uppercase()
-    ));
-    out.push_str("========================================================================================================\r\n\r\n");
-
-    match tab {
-        0 => {
-            out.push_str("[ TAB: STATUS LAYANAN RUNTIME (SERVICES) ]\r\n");
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            out.push_str(&format!(
-                "{:<14} {:<24} {:<8} {:<10} {:<18} {}\r\n",
-                "STATUS", "LAYANAN", "PORT", "PID", "TIPE", "ID PROSES"
-            ));
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-
-            let statuses = sm.get_all_statuses().await;
-            for s in &statuses {
-                let status_str = if s.is_running { "[RUNNING]" } else { "[STOPPED]" };
-                let pid_str = s.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
-                let port_str = if s.port > 0 { s.port.to_string() } else { "-".to_string() };
-                out.push_str(&format!(
-                    "{:<14} {:<24} {:<8} {:<10} {:<18} {}\r\n",
-                    status_str,
-                    s.name,
-                    port_str,
-                    pid_str,
-                    s.r#type,
-                    s.id
-                ));
-            }
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            out.push_str("Aksi Cepat Toolbar Atas:\r\n");
-            out.push_str(" [▶ Start All]     : Jalankan semua service runtime pengembang.\r\n");
-            out.push_str(" [⏹ Stop All]      : Hentikan seluruh background service.\r\n");
-            out.push_str(" [🔄 Reload Nginx] : Muat ulang konfigurasi virtual host Nginx & sertifikat SSL.\r\n");
-            out.push_str(" [🔍 Scan & Adopt] : Pindai ulang tools terpasang di host PC.\r\n");
-            out.push_str(" [⚡ Switch Profile]: Ganti profil antara Standalone (Native) dan Docker.\r\n");
-            out.push_str(" [⟳ Refresh]       : Periksa kembali status port dan proses saat ini.\r\n");
-        }
-        1 => {
-            out.push_str("[ TAB: TOOLS PENGEMBANG TERPASANG (DIADOPSI DARI SISTEM WINDOWS) ]\r\n");
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            out.push_str(&format!(
-                "{:<12} {:<26} {:<12} {:<10} {}\r\n",
-                "TOOL ID", "NAMA TOOL", "VERSI", "STATUS", "DIREKTORI INSTALASI"
-            ));
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-
-            let store = tool_store.lock().await;
-            let tools = store.load_all().unwrap_or_default();
-            if tools.is_empty() {
-                out.push_str("Belum ada tool terdaftar. Klik [🔍 Scan & Adopt] untuk memindai environment Anda.\r\n");
-            } else {
-                for t in &tools {
-                    let st = if t.is_active { "[AKTIF]" } else { "[NONAKTIF]" };
-                    out.push_str(&format!(
-                        "{:<12} {:<26} {:<12} {:<10} {}\r\n",
-                        t.tool_id,
-                        t.display_name,
-                        t.version,
-                        st,
-                        t.install_path
-                    ));
-                }
-            }
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            out.push_str(&format!("Total Tools Terdaftar: {} tools.\r\n", tools.len()));
-            out.push_str("Semua tool di atas otomatis disinkronkan ke PATH dan lingkungan runtime aplikasi lokal Anda.\r\n");
-        }
-        2 => {
-            out.push_str("[ TAB: PORT TCP AKTIF & DETEKSI KONFLIK (WIN32 IP HELPER API) ]\r\n");
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            out.push_str(&format!(
-                "{:<10} {:<12} {:<32} {}\r\n",
-                "PORT", "PID", "ALAMAT LOKAL", "PROSES PEMILIK"
-            ));
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-
-            match dotnet_windows::get_active_tcp_listeners() {
-                Ok(listeners) => {
-                    let mut relevant = listeners
-                        .into_iter()
-                        .filter(|l| {
-                            l.port == 80
-                                || l.port == 443
-                                || l.port == 3306
-                                || l.port == 5432
-                                || l.port == 6379
-                                || l.port == 8025
-                                || l.port == 9000
-                                || l.port == 4040
-                                || (3000..=9999).contains(&l.port)
-                        })
-                        .collect::<Vec<_>>();
-                    relevant.sort_by_key(|l| l.port);
-
-                    for l in &relevant {
-                        out.push_str(&format!(
-                            "{:<10} {:<12} {:<32} PID {}\r\n",
-                            l.port, l.owning_pid, l.local_addr, l.owning_pid
-                        ));
-                    }
-                }
-                Err(e) => {
-                    out.push_str(&format!("Gagal membaca tabel TCP: {}\r\n", e));
-                }
-            }
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            out.push_str("Data port diperiksa langsung via Windows GetExtendedTcpTable (IPv4 & IPv6).\r\n");
-        }
-        _ => {
-            out.push_str("[ TAB: LOG PERISTIWA RUNTIME ENGINE ]\r\n");
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-            let log_guard = logs.lock().await;
-            for line in log_guard.iter().rev().take(30).rev() {
-                out.push_str(line);
-                out.push_str("\r\n");
-            }
-            out.push_str("--------------------------------------------------------------------------------------------------------\r\n");
-        }
-    }
-
-    out
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
@@ -228,6 +85,12 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Initialize tokio runtime for background tasks and dashboard API server
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("Failed to build tokio runtime")?;
+
     // Initialize core stores & components
     let tool_store = Arc::new(Mutex::new(InstalledToolStore::new()));
     let profile_store = Arc::new(Mutex::new(ProfileStore::new()));
@@ -237,7 +100,7 @@ async fn main() -> Result<()> {
 
     // Auto-scan and adopt pre-installed host developer tools on startup
     {
-        let store = tool_store.lock().await;
+        let store = rt.block_on(tool_store.lock());
         match AdoptExistingScanner::adopt_all_discovered(&store) {
             Ok(count) => {
                 info!("Auto-adopted {count} installed local developer tools.");
@@ -255,7 +118,7 @@ async fn main() -> Result<()> {
 
     let logs = Arc::new(Mutex::new(vec![
         format!("[{}] Dotnet Rust Native Desktop Engine started.", chrono_lite()),
-        format!("[{}] Headless API port: {}", chrono_lite(), args.port),
+        format!("[{}] Local Engine API Port: {}", chrono_lite(), args.port),
     ]));
 
     let dashboard_state = DashboardState {
@@ -270,7 +133,7 @@ async fn main() -> Result<()> {
 
     // Spawn background HTTP API server
     let server = DashboardServer::new(dashboard_state.clone());
-    tokio::spawn(async move {
+    rt.spawn(async move {
         if let Err(e) = server.run().await {
             error!("Dashboard server error: {e}");
         }
@@ -279,9 +142,9 @@ async fn main() -> Result<()> {
     if args.headless {
         info!("Running in headless mode. Port: {}", args.port);
         println!("Dotnet engine running headless on port {}", args.port);
-        tokio::signal::ctrl_c()
-            .await
-            .context("Failed to listen for ctrl-c")?;
+        rt.block_on(async {
+            let _ = tokio::signal::ctrl_c().await;
+        });
         info!("Exiting Dotnet engine...");
         return Ok(());
     }
@@ -292,183 +155,23 @@ async fn main() -> Result<()> {
 
     info!("System Tray initialized successfully.");
 
-    // Initialize Native Windows Desktop GUI Window
-    let (native_window, window_rx) =
-        NativeMainWindow::create("Dotnet - Native Dev Environment Manager", 980, 680)
-            .context("Failed to create native desktop window")?;
-    let native_window = Arc::new(native_window);
+    // Build Tao Event Loop with custom user events
+    let event_loop = EventLoopBuilder::<TrayEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
 
-    // Initial render into native window
-    let initial_content = render_dashboard_content(0, &service_manager, &tool_store, &profile_store, &logs).await;
-    native_window.update_content(&initial_content);
-
-    if !args.minimized {
-        native_window.show();
-    } else {
-        native_window.hide();
-    }
-
-    let _ = tray.show_balloon(
-        "Dotnet Dev Engine",
-        "Aplikasi Desktop Native Dotnet siap digunakan.",
-        false,
-    );
-
-    // Spawn native window event handler thread
-    let nw_win = native_window.clone();
-    let sm_win = service_manager.clone();
-    let ts_win = tool_store.clone();
-    let ps_win = profile_store.clone();
-    let lg_win = logs.clone();
-
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build window tokio runtime");
-
-        while let Ok(event) = window_rx.recv() {
-            match event {
-                NativeWindowEvent::StartAll => {
-                    let sm = sm_win.clone();
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        let _ = sm.start_all().await;
-                        lg.lock()
-                            .await
-                            .push(format!("[{}] Memulai semua service runtime...", chrono_lite()));
-                    });
-                }
-                NativeWindowEvent::StopAll => {
-                    let sm = sm_win.clone();
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        let _ = sm.stop_all().await;
-                        lg.lock()
-                            .await
-                            .push(format!("[{}] Menghentikan semua service runtime...", chrono_lite()));
-                    });
-                }
-                NativeWindowEvent::ReloadNginx => {
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        let nginx_dir = AppPaths::tools_dir().join("nginx").join("current");
-                        let res = NginxManager::reload_nginx(&nginx_dir).await;
-                        let msg = match res {
-                            Ok((success, output)) => {
-                                if success {
-                                    format!("[{}] Nginx configuration reloaded successfully.", chrono_lite())
-                                } else {
-                                    format!("[{}] Nginx reload output: {}", chrono_lite(), output)
-                                }
-                            }
-                            Err(e) => format!("[{}] Nginx reload failed: {}", chrono_lite(), e),
-                        };
-                        lg.lock().await.push(msg);
-                    });
-                }
-                NativeWindowEvent::ScanAndAdoptTools => {
-                    let ts = ts_win.clone();
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        let store = ts.lock().await;
-                        match AdoptExistingScanner::adopt_all_discovered(&store) {
-                            Ok(c) => {
-                                lg.lock().await.push(format!(
-                                    "[{}] Pemindaian selesai: {} tool baru diadopsi.",
-                                    chrono_lite(),
-                                    c
-                                ));
-                            }
-                            Err(e) => {
-                                lg.lock().await.push(format!(
-                                    "[{}] Gagal memindai tools: {}",
-                                    chrono_lite(),
-                                    e
-                                ));
-                            }
-                        }
-                    });
-                }
-                NativeWindowEvent::SwitchProfile => {
-                    let ps = ps_win.clone();
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        let p = ps.lock().await;
-                        if let Ok(current) = p.get_active_profile() {
-                            let next = if current.id.eq_ignore_ascii_case("standalone") {
-                                "docker"
-                            } else {
-                                "standalone"
-                            };
-                            let _ = p.set_active_profile(next);
-                            lg.lock().await.push(format!(
-                                "[{}] Profil dialihkan ke: {}",
-                                chrono_lite(),
-                                next
-                            ));
-                        }
-                    });
-                }
-                NativeWindowEvent::RefreshStatus => {
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        lg.lock()
-                            .await
-                            .push(format!("[{}] Status runtime diperbarui.", chrono_lite()));
-                    });
-                }
-                NativeWindowEvent::SwitchTab(_) => {}
-                NativeWindowEvent::WindowHiddenToTray => {
-                    let lg = lg_win.clone();
-                    rt.block_on(async {
-                        lg.lock()
-                            .await
-                            .push(format!("[{}] Window diminimalkan ke System Tray.", chrono_lite()));
-                    });
-                }
-                NativeWindowEvent::WindowClosed => {
-                    break;
-                }
-                NativeWindowEvent::ToggleService(_) => {}
-            }
-
-            let tab = NativeMainWindow::get_active_tab();
-            let sm = sm_win.clone();
-            let ts = ts_win.clone();
-            let ps = ps_win.clone();
-            let lg = lg_win.clone();
-            let nw = nw_win.clone();
-
-            rt.block_on(async move {
-                let content = render_dashboard_content(tab, &sm, &ts, &ps, &lg).await;
-                nw.update_content(&content);
-            });
-        }
-    });
-
-    // Spawn system tray event handler thread
-    let nw_tray = native_window.clone();
+    // Spawn tray event bridge thread
     let sm_tray = service_manager.clone();
-    let ts_tray = tool_store.clone();
     let ps_tray = profile_store.clone();
     let lg_tray = logs.clone();
+    let rt_handle = rt.handle().clone();
 
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build tray tokio runtime");
-
         while let Ok(event) = tray_rx.recv() {
             match event {
-                TrayEvent::OpenDashboard => {
-                    nw_tray.show();
-                }
                 TrayEvent::StartAll => {
                     let sm = sm_tray.clone();
                     let lg = lg_tray.clone();
-                    rt.block_on(async {
+                    rt_handle.block_on(async {
                         let _ = sm.start_all().await;
                         lg.lock().await.push(format!(
                             "[{}] Memulai semua service dari System Tray...",
@@ -479,7 +182,7 @@ async fn main() -> Result<()> {
                 TrayEvent::StopAll => {
                     let sm = sm_tray.clone();
                     let lg = lg_tray.clone();
-                    rt.block_on(async {
+                    rt_handle.block_on(async {
                         let _ = sm.stop_all().await;
                         lg.lock().await.push(format!(
                             "[{}] Menghentikan semua service dari System Tray...",
@@ -489,7 +192,7 @@ async fn main() -> Result<()> {
                 }
                 TrayEvent::ReloadNginx => {
                     let lg = lg_tray.clone();
-                    rt.block_on(async {
+                    rt_handle.block_on(async {
                         let nginx_dir = AppPaths::tools_dir().join("nginx").join("current");
                         let _ = NginxManager::reload_nginx(&nginx_dir).await;
                         lg.lock().await.push(format!(
@@ -501,7 +204,7 @@ async fn main() -> Result<()> {
                 TrayEvent::SwitchProfile => {
                     let ps = ps_tray.clone();
                     let lg = lg_tray.clone();
-                    rt.block_on(async {
+                    rt_handle.block_on(async {
                         let p = ps.lock().await;
                         if let Ok(current) = p.get_active_profile() {
                             let next = if current.id.eq_ignore_ascii_case("standalone") {
@@ -518,42 +221,71 @@ async fn main() -> Result<()> {
                         }
                     });
                 }
-                TrayEvent::CheckPorts => {
-                    nw_tray.show();
-                }
-                TrayEvent::Exit => {
-                    info!("Exit triggered from system tray. Shutting down.");
-                    let sm = sm_tray.clone();
-                    rt.block_on(async {
-                        let _ = sm.stop_all().await;
-                    });
-                    unsafe {
-                        PostQuitMessage(0);
-                    }
-                    break;
+                TrayEvent::OpenDashboard | TrayEvent::CheckPorts | TrayEvent::Exit => {
+                    let _ = proxy.send_event(event);
                 }
             }
-
-            let tab = NativeMainWindow::get_active_tab();
-            let sm = sm_tray.clone();
-            let ts = ts_tray.clone();
-            let ps = ps_tray.clone();
-            let lg = lg_tray.clone();
-            let nw = nw_tray.clone();
-
-            rt.block_on(async move {
-                let content = render_dashboard_content(tab, &sm, &ts, &ps, &lg).await;
-                nw.update_content(&content);
-            });
         }
     });
 
-    // Run Win32 Message Loop on main thread
-    tray.run_message_loop();
-    tray.remove();
-    info!("Dotnet application cleanly stopped.");
+    // Create authentic Windows desktop window
+    let window = WindowBuilder::new()
+        .with_title("Dotnet - Development Environment Engine")
+        .with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0))
+        .with_min_inner_size(tao::dpi::LogicalSize::new(850.0, 600.0))
+        .with_visible(!args.minimized)
+        .build(&event_loop)
+        .context("Failed to create native desktop window")?;
 
-    Ok(())
+    // Embed WebView2 directly inside the desktop window
+    let dashboard_url = format!("http://127.0.0.1:{}", args.port);
+    let _webview = WebViewBuilder::new()
+        .with_url(&dashboard_url)
+        .build(&window)
+        .context("Failed to initialize embedded desktop webview")?;
+
+    let _ = tray.show_balloon(
+        "Dotnet Dev Engine",
+        "Aplikasi Desktop Native Dotnet aktif.",
+        false,
+    );
+
+    // Run Tao Event Loop on main thread
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+
+        match event {
+            Event::UserEvent(tray_ev) => match tray_ev {
+                TrayEvent::OpenDashboard | TrayEvent::CheckPorts => {
+                    window.set_visible(true);
+                    window.set_focus();
+                }
+                TrayEvent::Exit => {
+                    info!("Exit triggered from system tray. Shutting down.");
+                    let sm = service_manager.clone();
+                    rt.block_on(async {
+                        let _ = sm.stop_all().await;
+                    });
+                    tray.remove();
+                    *control_flow = ControlFlow::Exit;
+                }
+                _ => {}
+            },
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                // Minimize to system tray instead of exiting immediately
+                window.set_visible(false);
+                let _ = tray.show_balloon(
+                    "Dotnet Dev Engine",
+                    "Aplikasi berjalan di System Tray. Klik icon untuk membuka.",
+                    false,
+                );
+            }
+            _ => {}
+        }
+    });
 }
 
 fn chrono_lite() -> String {
