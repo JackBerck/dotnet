@@ -68,12 +68,30 @@ fn main() -> Result<()> {
     let args = parse_args();
     info!("Parsed CLI arguments: {:?}", args);
 
-    // Single-instance check
+    // 1. If an instance is already running on this port or window is active, restore it and exit cleanly
+    if restore_existing_instance(args.port) {
+        info!("Existing Dotnet instance found and restored. Exiting cleanly.");
+        return Ok(());
+    }
+
+    // 2. Administrator elevation check on startup:
+    // When running elevated, all service start/stop and hosts edits execute with ZERO UAC prompts.
+    if !dotnet_windows::is_elevated() && !args.headless {
+        info!("Not running as Administrator. Elevating process to allow seamless service and hosts management...");
+        if dotnet_windows::elevate_self() {
+            return Ok(());
+        }
+        warn!("Administrator elevation declined. Continuing in standard user mode...");
+    }
+
+    // 3. Single-instance check
     let _single_instance = match SingleInstanceGuard::acquire(SINGLE_INSTANCE_MUTEX) {
         Ok(Some(guard)) => guard,
         Ok(None) => {
-            info!("Another Dotnet instance is already running. Restoring window and exiting cleanly.");
-            restore_existing_instance(args.port);
+            info!(
+                "Another Dotnet instance is already running. Restoring window and exiting cleanly."
+            );
+            let _ = restore_existing_instance(args.port);
             return Ok(());
         }
         Err(e) => {
@@ -114,7 +132,10 @@ fn main() -> Result<()> {
     }
 
     let logs = Arc::new(Mutex::new(vec![
-        format!("[{}] Dotnet Rust Native Desktop Engine started.", chrono_lite()),
+        format!(
+            "[{}] Dotnet Rust Native Desktop Engine started.",
+            chrono_lite()
+        ),
         format!("[{}] Local Engine API Port: {}", chrono_lite(), args.port),
     ]));
 
@@ -300,29 +321,36 @@ fn main() -> Result<()> {
     });
 }
 
-fn restore_existing_instance(port: u16) {
+fn restore_existing_instance(port: u16) -> bool {
     use std::io::Write;
     use std::net::{SocketAddr, TcpStream};
     use std::time::Duration;
 
+    let mut restored = false;
+
     // 1. Send HTTP restore signal to existing instance background API
     let addr_str = format!("127.0.0.1:{}", port);
     if let Ok(addr) = addr_str.parse::<SocketAddr>() {
-        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(800)) {
+        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) {
             let req = format!(
                 "POST /api/app/restore HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 port
             );
-            let _ = stream.write_all(req.as_bytes());
-            let _ = stream.flush();
+            if stream.write_all(req.as_bytes()).is_ok() && stream.flush().is_ok() {
+                restored = true;
+            }
         }
     }
 
     // 2. Win32 FindWindow fallback to restore and focus
-    bring_window_to_front();
+    if bring_window_to_front() {
+        restored = true;
+    }
+
+    restored
 }
 
-fn bring_window_to_front() {
+fn bring_window_to_front() -> bool {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -338,8 +366,10 @@ fn bring_window_to_front() {
             ShowWindow(hwnd, SW_RESTORE);
             ShowWindow(hwnd, SW_SHOW);
             SetForegroundWindow(hwnd);
+            return true;
         }
     }
+    false
 }
 
 fn chrono_lite() -> String {

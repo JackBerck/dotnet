@@ -122,6 +122,12 @@ pub fn start_service(service_name: &str, timeout_secs: u64) -> Result<()> {
         let started = StartServiceW(svc, 0, std::ptr::null_mut());
         if started == 0 {
             let err = std::io::Error::last_os_error().raw_os_error().unwrap_or(0) as u32;
+            if err == 1056 {
+                // ERROR_SERVICE_ALREADY_RUNNING
+                CloseServiceHandle(svc);
+                CloseServiceHandle(scm);
+                return Ok(());
+            }
             if err != ERROR_SUCCESS {
                 CloseServiceHandle(svc);
                 CloseServiceHandle(scm);
@@ -194,6 +200,12 @@ pub fn stop_service(service_name: &str, timeout_secs: u64) -> Result<()> {
         let stopped = ControlService(svc, SERVICE_CONTROL_STOP, &mut status);
         if stopped == 0 {
             let err = std::io::Error::last_os_error().raw_os_error().unwrap_or(0) as u32;
+            if err == 1062 {
+                // ERROR_SERVICE_NOT_ACTIVE
+                CloseServiceHandle(svc);
+                CloseServiceHandle(scm);
+                return Ok(());
+            }
             CloseServiceHandle(svc);
             CloseServiceHandle(scm);
             return Err(WindowsError::ProcessError(format!(
@@ -237,8 +249,19 @@ pub fn stop_service(service_name: &str, timeout_secs: u64) -> Result<()> {
     }
 }
 
-/// Trigger elevated (UAC) start of a Windows Service via net.exe
+/// Trigger elevated start of a Windows Service via net.exe
 pub fn start_service_elevated(service_name: &str) -> bool {
+    if crate::process::is_elevated() {
+        let mut cmd = std::process::Command::new("net.exe");
+        cmd.args(["start", service_name]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        return cmd.status().map(|s| s.success()).unwrap_or(false);
+    }
+
     let wide_verb = to_wide("runas");
     let wide_file = to_wide("net.exe");
     let wide_params = to_wide(&format!("start \"{}\"", service_name));
@@ -256,8 +279,19 @@ pub fn start_service_elevated(service_name: &str) -> bool {
     }
 }
 
-/// Trigger elevated (UAC) stop of a Windows Service via net.exe
+/// Trigger elevated stop of a Windows Service via net.exe
 pub fn stop_service_elevated(service_name: &str) -> bool {
+    if crate::process::is_elevated() {
+        let mut cmd = std::process::Command::new("net.exe");
+        cmd.args(["stop", service_name]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        return cmd.status().map(|s| s.success()).unwrap_or(false);
+    }
+
     let wide_verb = to_wide("runas");
     let wide_file = to_wide("net.exe");
     let wide_params = to_wide(&format!("stop \"{}\"", service_name));
@@ -277,6 +311,17 @@ pub fn stop_service_elevated(service_name: &str) -> bool {
 
 /// Force terminate a PID with Administrator privileges via elevated taskkill
 pub fn terminate_pid_elevated(pid: u32) -> bool {
+    if crate::process::is_elevated() {
+        let mut cmd = std::process::Command::new("taskkill.exe");
+        cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        return cmd.status().map(|s| s.success()).unwrap_or(false);
+    }
+
     let wide_verb = to_wide("runas");
     let wide_file = to_wide("taskkill.exe");
     let wide_params = to_wide(&format!("/F /T /PID {}", pid));

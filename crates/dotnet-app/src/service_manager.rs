@@ -158,7 +158,8 @@ impl AppServiceManager {
 
             // 2. Windows Service SCM check
             if !is_running {
-                let resolved_name = resolve_windows_service_name(&s.id, s.windows_service_name.as_deref());
+                let resolved_name =
+                    resolve_windows_service_name(&s.id, s.windows_service_name.as_deref());
                 if let Some(ref svc_name) = resolved_name {
                     let state = get_service_status(svc_name);
                     if state == WindowsServiceState::Running {
@@ -205,7 +206,9 @@ impl AppServiceManager {
         let bin_name = service.binary_name.as_deref()?;
 
         // 1. Check InstalledToolStore (records from adopt_scanner or tool installer)
-        if let Ok(Some(tool)) = dotnet_core::installation::store::InstalledToolStore::new().get_active_tool(&service.id) {
+        if let Ok(Some(tool)) =
+            dotnet_core::installation::store::InstalledToolStore::new().get_active_tool(&service.id)
+        {
             let p = PathBuf::from(&tool.install_path);
             if p.is_file() {
                 return Some(p);
@@ -303,7 +306,11 @@ impl AppServiceManager {
             .find(|s| s.id.eq_ignore_ascii_case(id))
             .ok_or_else(|| anyhow!("Unknown service '{id}'"))?;
 
-        self.log(format!("[SERVICE] Starting '{}' on port {}...", svc.name, svc.port)).await;
+        self.log(format!(
+            "[SERVICE] Starting '{}' on port {}...",
+            svc.name, svc.port
+        ))
+        .await;
 
         // 1. Check if already listening on port
         if svc.port > 0 {
@@ -312,27 +319,31 @@ impl AppServiceManager {
                     self.log(format!(
                         "[SERVICE] '{}' is already active on port {} (PID: {})",
                         svc.name, svc.port, pid
-                    )).await;
+                    ))
+                    .await;
                     return Ok(());
                 }
             }
         }
 
         // 2. Try Windows Service start if configured
-        let resolved_svc_name = resolve_windows_service_name(&svc.id, svc.windows_service_name.as_deref());
+        let resolved_svc_name =
+            resolve_windows_service_name(&svc.id, svc.windows_service_name.as_deref());
         if let Some(ref svc_name) = resolved_svc_name {
             let state = get_service_status(svc_name);
             if state == WindowsServiceState::Running {
                 self.log(format!(
                     "[SERVICE] Windows Service '{}' is already running.",
                     svc_name
-                )).await;
+                ))
+                .await;
                 return Ok(());
             } else if state != WindowsServiceState::NotInstalled {
                 self.log(format!(
                     "[SERVICE] Starting Windows Service '{}' via SCM...",
                     svc_name
-                )).await;
+                ))
+                .await;
 
                 let mut started = start_service(svc_name, 5).is_ok();
                 if !started {
@@ -356,7 +367,8 @@ impl AppServiceManager {
                     self.log(format!(
                         "[SERVICE] SUCCESS: Windows Service '{}' is now running.",
                         svc_name
-                    )).await;
+                    ))
+                    .await;
                     return Ok(());
                 } else {
                     self.log(format!(
@@ -372,8 +384,10 @@ impl AppServiceManager {
             Some(p) => {
                 self.log(format!(
                     "[SERVICE] Located executable for '{}': {}",
-                    svc.name, p.display()
-                )).await;
+                    svc.name,
+                    p.display()
+                ))
+                .await;
                 p
             }
             None => {
@@ -387,21 +401,27 @@ impl AppServiceManager {
         };
 
         let work_dir = exe_path.parent().map(|p| p.to_path_buf());
-        match self.supervisor.start_service(svc, exe_path.clone(), work_dir).await {
+        match self
+            .supervisor
+            .start_service(svc, exe_path.clone(), work_dir)
+            .await
+        {
             Ok(pid) => {
                 let tracker = self.tracker.lock().await;
                 let _ = tracker.record_process(&svc.id, pid, &exe_path);
                 self.log(format!(
                     "[SERVICE] SUCCESS: Started '{}' process (PID: {}, Port: {})",
                     svc.name, pid, svc.port
-                )).await;
+                ))
+                .await;
                 Ok(())
             }
             Err(e) => {
                 self.log(format!(
                     "[SERVICE] ERROR: Failed to start process '{}': {}",
                     svc.name, e
-                )).await;
+                ))
+                .await;
                 Err(anyhow!(e))
             }
         }
@@ -415,14 +435,20 @@ impl AppServiceManager {
             .find(|s| s.id.eq_ignore_ascii_case(id))
             .ok_or_else(|| anyhow!("Unknown service '{id}'"))?;
 
-        self.log(format!("[SERVICE] Stopping '{}'...", svc.name)).await;
+        self.log(format!("[SERVICE] Stopping '{}'...", svc.name))
+            .await;
 
         // 1. Try Windows Service stop if applicable
-        let resolved_svc_name = resolve_windows_service_name(&svc.id, svc.windows_service_name.as_deref());
+        let resolved_svc_name =
+            resolve_windows_service_name(&svc.id, svc.windows_service_name.as_deref());
         if let Some(ref svc_name) = resolved_svc_name {
             let state = get_service_status(svc_name);
             if state == WindowsServiceState::Running {
-                self.log(format!("[SERVICE] Stopping Windows Service '{}' via SCM...", svc_name)).await;
+                self.log(format!(
+                    "[SERVICE] Stopping Windows Service '{}' via SCM...",
+                    svc_name
+                ))
+                .await;
                 let scm_res = stop_service(svc_name, 3);
                 if let Err(e) = scm_res {
                     self.log(format!(
@@ -452,7 +478,8 @@ impl AppServiceManager {
                     self.log(format!(
                         "[SERVICE] Terminating process holding port {} (PID: {})...",
                         svc.port, pid
-                    )).await;
+                    ))
+                    .await;
                     if let Err(e) = terminate_pid(pid) {
                         self.log(format!(
                             "[SERVICE] Direct process termination failed: {}. Requesting elevated taskkill...",
@@ -499,13 +526,18 @@ impl AppServiceManager {
         let tracker = self.tracker.lock().await;
         let _ = tracker.remove_process(&svc.id);
 
-        self.log(format!("[SERVICE] SUCCESS: '{}' stopped cleanly.", svc.name)).await;
+        self.log(format!(
+            "[SERVICE] SUCCESS: '{}' stopped cleanly.",
+            svc.name
+        ))
+        .await;
         Ok(())
     }
 
     /// Restart a service by ID.
     pub async fn restart_service(&self, id: &str) -> Result<()> {
-        self.log(format!("[SERVICE] Restarting service '{}'...", id)).await;
+        self.log(format!("[SERVICE] Restarting service '{}'...", id))
+            .await;
         let _ = self.stop_service(id).await;
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         self.start_service(id).await
@@ -523,7 +555,8 @@ impl AppServiceManager {
             "[BATCH] Starting {} services for active profile '{}'...",
             ordered.len(),
             profile.name
-        )).await;
+        ))
+        .await;
 
         let mut success_count = 0;
         let mut fail_count = 0;
@@ -541,7 +574,8 @@ impl AppServiceManager {
         self.log(format!(
             "[BATCH] Batch startup summary: {} succeeded, {} failed.",
             success_count, fail_count
-        )).await;
+        ))
+        .await;
 
         Ok(())
     }
@@ -557,7 +591,8 @@ impl AppServiceManager {
         self.log(format!(
             "[BATCH] Stopping all services (total: {})...",
             ordered.len()
-        )).await;
+        ))
+        .await;
 
         for svc in ordered {
             if let Err(e) = self.stop_service(&svc.id).await {

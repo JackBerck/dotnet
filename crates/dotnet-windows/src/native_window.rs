@@ -63,7 +63,11 @@ unsafe impl Sync for NativeMainWindow {}
 
 impl NativeMainWindow {
     /// Create and show the native Windows desktop application window.
-    pub fn create(title: &str, width: i32, height: i32) -> Result<(Self, Receiver<NativeWindowEvent>)> {
+    pub fn create(
+        title: &str,
+        width: i32,
+        height: i32,
+    ) -> Result<(Self, Receiver<NativeWindowEvent>)> {
         let (tx, rx) = channel();
         unsafe {
             EVENT_TX = Some(tx);
@@ -120,29 +124,107 @@ impl NativeMainWindow {
 
             // Create Segoe UI font for controls
             let font_name: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
-            let hfont = CreateFontW(
-                17, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, font_name.as_ptr(),
-            );
+            let hfont = CreateFontW(17, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, font_name.as_ptr());
 
             // Create Consolas monospace font for tabular output
             let mono_name: Vec<u16> = "Consolas\0".encode_utf16().collect();
-            let hfont_mono = CreateFontW(
-                17, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, mono_name.as_ptr(),
-            );
+            let hfont_mono =
+                CreateFontW(17, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, mono_name.as_ptr());
 
             // Create Toolbar Buttons
-            create_button(hwnd, "▶ Start All", 20, 20, 110, 36, CMD_WIN_START_ALL, hfont);
-            create_button(hwnd, "⏹ Stop All", 140, 20, 110, 36, CMD_WIN_STOP_ALL, hfont);
-            create_button(hwnd, "🔄 Reload Nginx", 260, 20, 125, 36, CMD_WIN_RELOAD_NGINX, hfont);
-            create_button(hwnd, "🔍 Scan & Adopt", 395, 20, 130, 36, CMD_WIN_SCAN_ADOPT, hfont);
-            create_button(hwnd, "⚡ Switch Profile", 535, 20, 130, 36, CMD_WIN_SWITCH_PROFILE, hfont);
+            create_button(
+                hwnd,
+                "▶ Start All",
+                20,
+                20,
+                110,
+                36,
+                CMD_WIN_START_ALL,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "⏹ Stop All",
+                140,
+                20,
+                110,
+                36,
+                CMD_WIN_STOP_ALL,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "🔄 Reload Nginx",
+                260,
+                20,
+                125,
+                36,
+                CMD_WIN_RELOAD_NGINX,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "🔍 Scan & Adopt",
+                395,
+                20,
+                130,
+                36,
+                CMD_WIN_SCAN_ADOPT,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "⚡ Switch Profile",
+                535,
+                20,
+                130,
+                36,
+                CMD_WIN_SWITCH_PROFILE,
+                hfont,
+            );
             create_button(hwnd, "⟳ Refresh", 675, 20, 100, 36, CMD_WIN_REFRESH, hfont);
 
             // Create Tab Navigation Buttons
-            create_button(hwnd, "📋 Layanan (Services)", 20, 72, 170, 32, CMD_TAB_SERVICES, hfont);
-            create_button(hwnd, "🛠 Tools Terpasang", 200, 72, 170, 32, CMD_TAB_TOOLS, hfont);
-            create_button(hwnd, "🔌 Port Aktif (TCP)", 380, 72, 170, 32, CMD_TAB_PORTS, hfont);
-            create_button(hwnd, "📄 Log Peristiwa", 560, 72, 150, 32, CMD_TAB_LOGS, hfont);
+            create_button(
+                hwnd,
+                "📋 Layanan (Services)",
+                20,
+                72,
+                170,
+                32,
+                CMD_TAB_SERVICES,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "🛠 Tools Terpasang",
+                200,
+                72,
+                170,
+                32,
+                CMD_TAB_TOOLS,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "🔌 Port Aktif (TCP)",
+                380,
+                72,
+                170,
+                32,
+                CMD_TAB_PORTS,
+                hfont,
+            );
+            create_button(
+                hwnd,
+                "📄 Log Peristiwa",
+                560,
+                72,
+                150,
+                32,
+                CMD_TAB_LOGS,
+                hfont,
+            );
 
             // Create Multi-line Read-Only Rich Display Area
             let edit_class: Vec<u16> = "EDIT\0".encode_utf16().collect();

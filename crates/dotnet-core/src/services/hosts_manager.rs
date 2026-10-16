@@ -210,13 +210,16 @@ impl HostsFileManager {
         Ok(backup_path)
     }
 
-    /// Atomically write new content to hosts file via .tmp file.
+    /// Atomically write new content to hosts file via .tmp file with direct fallback.
     pub fn write_atomic<P: AsRef<Path>>(hosts_path: P, content: &str) -> Result<()> {
         let hosts_path = hosts_path.as_ref();
         let tmp_path = hosts_path.with_extension("tmp");
 
-        fs::write(&tmp_path, content)?;
-        fs::rename(&tmp_path, hosts_path)?;
+        if fs::write(&tmp_path, content).is_ok() && fs::rename(&tmp_path, hosts_path).is_ok() {
+            return Ok(());
+        }
+        let _ = fs::remove_file(&tmp_path);
+        fs::write(hosts_path, content)?;
 
         Ok(())
     }
@@ -256,6 +259,42 @@ impl HostsFileManager {
         Ok(())
     }
 
+    /// Add or update an entry in the default system hosts file.
+    pub fn add_or_update_default(ip: &str, hostname: &str) -> Result<()> {
+        let path = Self::default_hosts_path();
+        let _ = Self::backup_hosts_file(&path);
+        Self::add_or_update_managed_entry(&path, ip, hostname)
+    }
+
+    /// Toggle enabled status of a hosts entry in default hosts file.
+    pub fn toggle_entry_default(hostname: &str, enable: bool) -> Result<()> {
+        let path = Self::default_hosts_path();
+        if !path.exists() {
+            return Err(CoreError::Config("Hosts file not found".into()));
+        }
+        let _ = Self::backup_hosts_file(&path);
+        let content = fs::read_to_string(&path)?;
+        let entries = Self::parse_content(&content);
+        let mut managed: Vec<HostEntry> = entries.into_iter().filter(|e| e.is_managed).collect();
+        if let Some(existing) = managed
+            .iter_mut()
+            .find(|e| e.hostname.eq_ignore_ascii_case(hostname))
+        {
+            existing.is_enabled = enable;
+        } else {
+            // Adopt into managed block with toggled state
+            managed.push(HostEntry {
+                ip: "127.0.0.1".into(),
+                hostname: hostname.to_string(),
+                is_enabled: enable,
+                is_managed: true,
+            });
+        }
+        let new_content = Self::render_with_managed_entries(&content, &managed);
+        Self::write_atomic(&path, &new_content)?;
+        Ok(())
+    }
+
     /// Remove a managed entry from the hosts file by hostname.
     pub fn remove_managed_entry<P: AsRef<Path>>(hosts_path: P, hostname: &str) -> Result<()> {
         let hosts_path = hosts_path.as_ref();
@@ -273,6 +312,52 @@ impl HostsFileManager {
         Ok(())
     }
 
+    /// Remove an entry from default system hosts file (managed or unmanaged).
+    pub fn remove_entry_default(hostname: &str) -> Result<()> {
+        let path = Self::default_hosts_path();
+        if !path.exists() {
+            return Ok(());
+        }
+        let _ = Self::backup_hosts_file(&path);
+        let content = fs::read_to_string(&path)?;
+        let mut lines = Vec::new();
+        let mut in_managed = false;
+        let mut managed_entries = Vec::new();
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.eq_ignore_ascii_case(BLOCK_START) {
+                in_managed = true;
+                continue;
+            }
+            if trimmed.eq_ignore_ascii_case(BLOCK_END) {
+                in_managed = false;
+                continue;
+            }
+            if in_managed {
+                continue;
+            }
+
+            let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+            if tokens.len() >= 2 && tokens[1..].iter().any(|t| t.eq_ignore_ascii_case(hostname)) {
+                continue;
+            }
+            lines.push(line);
+        }
+
+        let entries = Self::parse_content(&content);
+        for e in entries {
+            if e.is_managed && !e.hostname.eq_ignore_ascii_case(hostname) {
+                managed_entries.push(e);
+            }
+        }
+
+        let base_content = lines.join("\r\n");
+        let new_content = Self::render_with_managed_entries(&base_content, &managed_entries);
+        Self::write_atomic(&path, &new_content)?;
+        Ok(())
+    }
+
     /// Read all entries from default Windows hosts file.
     pub fn read_entries_from_default() -> Result<Vec<HostEntry>> {
         let path = Self::default_hosts_path();
@@ -281,6 +366,23 @@ impl HostsFileManager {
         }
         let content = fs::read_to_string(&path)?;
         Ok(Self::parse_content(&content))
+    }
+
+    /// Read raw text content of default Windows hosts file.
+    pub fn read_raw_hosts() -> Result<String> {
+        let path = Self::default_hosts_path();
+        if !path.exists() {
+            return Ok(String::new());
+        }
+        Ok(fs::read_to_string(&path)?)
+    }
+
+    /// Save raw text content to default Windows hosts file with automatic backup.
+    pub fn save_raw_hosts(content: &str) -> Result<()> {
+        let path = Self::default_hosts_path();
+        let _ = Self::backup_hosts_file(&path);
+        Self::write_atomic(&path, content)?;
+        Ok(())
     }
 }
 

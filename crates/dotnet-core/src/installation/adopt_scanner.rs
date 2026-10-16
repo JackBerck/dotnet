@@ -3,10 +3,10 @@
 use crate::error::Result;
 use crate::installation::store::{InstalledToolRecord, InstalledToolStore};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -76,7 +76,11 @@ impl AdoptExistingScanner {
 
                 let _ = store.register_tool(record);
                 adopted_count += 1;
-                tracing::info!("Adopted local tool: {} v{}", d.display_name, d.detected_version);
+                tracing::info!(
+                    "Adopted local tool: {} v{}",
+                    d.display_name,
+                    d.detected_version
+                );
             }
         }
 
@@ -117,8 +121,8 @@ impl AdoptExistingScanner {
                 if name.contains("nginx") {
                     let nginx_exe = path.join("nginx.exe");
                     if nginx_exe.is_file() {
-                        let ver = detect_version(&nginx_exe, "-v")
-                            .unwrap_or_else(|| "1.x".to_string());
+                        let ver =
+                            detect_version(&nginx_exe, "-v").unwrap_or_else(|| "1.x".to_string());
                         list.push(DiscoveredTool {
                             tool_id: "nginx".into(),
                             display_name: "Nginx Web Server".into(),
@@ -146,7 +150,10 @@ impl AdoptExistingScanner {
         for c in &candidates {
             if c.is_file() {
                 let ver = detect_version(c, "--version").unwrap_or_else(|| "8.4".into());
-                let dir = c.parent().and_then(|p| p.parent()).unwrap_or(c.parent().unwrap());
+                let dir = c
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .unwrap_or(c.parent().unwrap());
                 list.push(DiscoveredTool {
                     tool_id: "mysql".into(),
                     display_name: "MySQL Database Server".into(),
@@ -160,7 +167,10 @@ impl AdoptExistingScanner {
 
         if let Ok(path) = which::which("mysqld.exe") {
             let ver = detect_version(&path, "--version").unwrap_or_else(|| "8.x".into());
-            let dir = path.parent().and_then(|p| p.parent()).unwrap_or(path.parent().unwrap());
+            let dir = path
+                .parent()
+                .and_then(|p| p.parent())
+                .unwrap_or(path.parent().unwrap());
             list.push(DiscoveredTool {
                 tool_id: "mysql".into(),
                 display_name: "MySQL Database Server".into(),
@@ -199,7 +209,10 @@ impl AdoptExistingScanner {
 
         if let Ok(path) = which::which("postgres.exe") {
             let ver = detect_version(&path, "--version").unwrap_or_else(|| "17.x".into());
-            let dir = path.parent().and_then(|p| p.parent()).unwrap_or(path.parent().unwrap());
+            let dir = path
+                .parent()
+                .and_then(|p| p.parent())
+                .unwrap_or(path.parent().unwrap());
             list.push(DiscoveredTool {
                 tool_id: "postgres".into(),
                 display_name: "PostgreSQL Database".into(),
@@ -218,7 +231,9 @@ impl AdoptExistingScanner {
         let default_path = PathBuf::from(r"C:\tools\nginx\nginx.exe");
         if default_path.is_file() {
             let ver = detect_version(&default_path, "-v").unwrap_or_else(|| "1.30".into());
-            let dir = default_path.parent().unwrap_or(Path::new(r"C:\tools\nginx"));
+            let dir = default_path
+                .parent()
+                .unwrap_or(Path::new(r"C:\tools\nginx"));
             list.push(DiscoveredTool {
                 tool_id: "nginx".into(),
                 display_name: "Nginx Web Server".into(),
@@ -284,7 +299,12 @@ impl AdoptExistingScanner {
     fn scan_bun(list: &mut Vec<DiscoveredTool>) {
         let mut candidates = Vec::new();
         if let Some(profile) = std::env::var_os("USERPROFILE") {
-            candidates.push(PathBuf::from(profile).join(".bun").join("bin").join("bun.exe"));
+            candidates.push(
+                PathBuf::from(profile)
+                    .join(".bun")
+                    .join("bin")
+                    .join("bun.exe"),
+            );
         }
         if let Ok(w) = which::which("bun.exe") {
             candidates.push(w);

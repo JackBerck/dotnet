@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  format:
+    name: Code Formatting
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check code formatting
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy Linter
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run clippy checks
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Unit & Integration Tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run workspace tests
+        run: cargo test --workspace --verbose
+
+  build:
+    name: Release Build & Size Verification
+    runs-on: windows-latest
+    needs: [format, clippy, test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Verify release binaries
+        shell: pwsh
+        run: |
+          $cli = "target/release/dotnet-cli.exe"
+          $app = "target/release/dotnet-app.exe"
+          if (-not (Test-Path $cli)) { throw "Missing $cli" }
+          if (-not (Test-Path $app)) { throw "Missing $app" }
+          $cliSize = [math]::Round((Get-Item $cli).Length / 1MB, 2)
+          $appSize = [math]::Round((Get-Item $app).Length / 1MB, 2)
+          Write-Host "dotnet-cli.exe size: $cliSize MB"
+          Write-Host "dotnet-app.exe size: $appSize MB"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            target/release/dotnet-cli.exe
+            target/release/dotnet-app.exe
+          if-no-files-found: error
+          retention-days: 7

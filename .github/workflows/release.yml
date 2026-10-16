@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag version (e.g. v0.1.0)"
+        required: false
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    name: Build & Publish GitHub Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run workspace verification tests
+        run: cargo test --workspace
+
+      - name: Package release bundle
+        shell: pwsh
+        run: |
+          .\scripts\package-release.ps1
+
+      - name: Generate SHA256 Checksums
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "dist\*.zip", "dist\Dotnet-Rust-win-x64\*.exe"
+          $checksums = foreach ($f in $files) {
+              $hash = (Get-FileHash -Path $f.FullName -Algorithm SHA256).Hash.ToLower()
+              "$hash  $($f.Name)"
+          }
+          $checksums | Set-Content -Path "dist\checksums.txt" -Encoding utf8
+          Write-Host "Generated checksums:"
+          Get-Content "dist\checksums.txt"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/Dotnet-Rust-win-x64/dotnet.exe
+            dist/Dotnet-Rust-win-x64/dotnet-app.exe
+            dist/checksums.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false

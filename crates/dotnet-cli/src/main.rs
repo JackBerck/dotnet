@@ -346,7 +346,10 @@ async fn main() -> anyhow::Result<()> {
                 Some("adopt") | Some("scan") => {
                     println!("Memindai developer tools yang terpasang di sistem Windows...");
                     let count = AdoptExistingScanner::adopt_all_discovered(&store)?;
-                    println!("Selesai: {} tool terdeteksi dan diadopsi ke environment Dotnet.", count);
+                    println!(
+                        "Selesai: {} tool terdeteksi dan diadopsi ke environment Dotnet.",
+                        count
+                    );
                 }
                 _ => {
                     println!(
@@ -803,7 +806,11 @@ async fn run_interactive_cli_dashboard() -> anyhow::Result<()> {
         let svc_list = [
             ("Nginx Web Server", 80, "nginx.exe"),
             ("MySQL Server", 3306, "mysqld.exe (MySQL84)"),
-            ("PostgreSQL Database", 5432, "postgres.exe (postgresql-x64-17)"),
+            (
+                "PostgreSQL Database",
+                5432,
+                "postgres.exe (postgresql-x64-17)",
+            ),
             ("Redis / Memurai", 6379, "memurai.exe (Port 6379)"),
             ("PHP FastCGI Engine", 9000, "php-cgi.exe (Port 9000)"),
             ("Mailpit SMTP", 8025, "mailpit.exe (Port 8025)"),
@@ -816,7 +823,9 @@ async fn run_interactive_cli_dashboard() -> anyhow::Result<()> {
             };
 
             let status_str = if is_running { "[RUNNING]" } else { "[STOPPED]" };
-            let pid_str = pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
+            let pid_str = pid
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".to_string());
             println!(
                 "{:<14} {:<24} {:<8} {:<10} {}",
                 status_str, name, port, pid_str, desc
@@ -918,7 +927,10 @@ async fn run_interactive_cli_dashboard() -> anyhow::Result<()> {
             }
             "4" => {
                 let nginx_dir = NginxManager::default_nginx_dir();
-                println!("\nMemvalidasi konfigurasi Nginx di {}...", nginx_dir.display());
+                println!(
+                    "\nMemvalidasi konfigurasi Nginx di {}...",
+                    nginx_dir.display()
+                );
                 match NginxManager::validate_config(&nginx_dir).await {
                     Ok((ok, out)) => {
                         println!("Hasil: {}\n{}", if ok { "PASSED" } else { "FAILED" }, out);

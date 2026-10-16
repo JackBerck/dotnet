@@ -157,6 +157,24 @@ pub struct AddProjectPayload {
     pub path: String,
 }
 
+#[derive(Deserialize)]
+pub struct HostEntryPayload {
+    pub ip: Option<String>,
+    pub hostname: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RawTextPayload {
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+pub struct PhpConfigUpdatePayload {
+    pub settings: Option<HashMap<String, String>>,
+    pub key: Option<String>,
+    pub value: Option<String>,
+}
+
 /// Background HTTP Dashboard Server.
 pub struct DashboardServer {
     state: DashboardState,
@@ -331,31 +349,43 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
             match action {
                 "start" => match state.service_manager.start_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("[ACTION] Service '{id}' start succeeded.")).await;
+                        state
+                            .add_log(format!("[ACTION] Service '{id}' start succeeded."))
+                            .await;
                         HttpResponse::ok_msg(&format!("Service '{id}' started"))
                     }
                     Err(e) => {
-                        state.add_log(format!("[ACTION] Failed to start service '{id}': {e}")).await;
+                        state
+                            .add_log(format!("[ACTION] Failed to start service '{id}': {e}"))
+                            .await;
                         HttpResponse::error(500, &format!("Failed to start '{id}': {e}"))
                     }
                 },
                 "stop" => match state.service_manager.stop_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("[ACTION] Service '{id}' stop succeeded.")).await;
+                        state
+                            .add_log(format!("[ACTION] Service '{id}' stop succeeded."))
+                            .await;
                         HttpResponse::ok_msg(&format!("Service '{id}' stopped"))
                     }
                     Err(e) => {
-                        state.add_log(format!("[ACTION] Failed to stop service '{id}': {e}")).await;
+                        state
+                            .add_log(format!("[ACTION] Failed to stop service '{id}': {e}"))
+                            .await;
                         HttpResponse::error(500, &format!("Failed to stop '{id}': {e}"))
                     }
                 },
                 "restart" => match state.service_manager.restart_service(id).await {
                     Ok(_) => {
-                        state.add_log(format!("[ACTION] Service '{id}' restart succeeded.")).await;
+                        state
+                            .add_log(format!("[ACTION] Service '{id}' restart succeeded."))
+                            .await;
                         HttpResponse::ok_msg(&format!("Service '{id}' restarted"))
                     }
                     Err(e) => {
-                        state.add_log(format!("[ACTION] Failed to restart service '{id}': {e}")).await;
+                        state
+                            .add_log(format!("[ACTION] Failed to restart service '{id}': {e}"))
+                            .await;
                         HttpResponse::error(500, &format!("Failed to restart '{id}': {e}"))
                     }
                 },
@@ -365,11 +395,15 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
 
         ("POST", "/api/services/start-all") => match state.service_manager.start_all().await {
             Ok(_) => {
-                state.add_log("[BATCH] All services started successfully.").await;
+                state
+                    .add_log("[BATCH] All services started successfully.")
+                    .await;
                 HttpResponse::ok_msg("All services started successfully")
             }
             Err(e) => {
-                state.add_log(format!("[BATCH] Failed to start all services: {e}")).await;
+                state
+                    .add_log(format!("[BATCH] Failed to start all services: {e}"))
+                    .await;
                 HttpResponse::error(500, &format!("Error starting all services: {e}"))
             }
         },
@@ -380,7 +414,9 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
                 HttpResponse::ok_msg("All services stopped successfully")
             }
             Err(e) => {
-                state.add_log(format!("[BATCH] Failed to stop all services: {e}")).await;
+                state
+                    .add_log(format!("[BATCH] Failed to stop all services: {e}"))
+                    .await;
                 HttpResponse::error(500, &format!("Error stopping all services: {e}"))
             }
         },
@@ -553,7 +589,10 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
                 });
             }
             for inst in installed {
-                if !items.iter().any(|i| i.id.eq_ignore_ascii_case(&inst.tool_id)) {
+                if !items
+                    .iter()
+                    .any(|i| i.id.eq_ignore_ascii_case(&inst.tool_id))
+                {
                     items.push(ToolDashboardItem {
                         id: inst.tool_id.clone(),
                         display_name: inst.display_name.clone(),
@@ -570,7 +609,8 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
 
         ("POST", "/api/tools/scan") => {
             let tool_store = state.tool_store.lock().await;
-            match dotnet_core::installation::AdoptExistingScanner::adopt_all_discovered(&tool_store) {
+            match dotnet_core::installation::AdoptExistingScanner::adopt_all_discovered(&tool_store)
+            {
                 Ok(count) => {
                     state
                         .add_log(format!("Adopted {count} local tools from system."))
@@ -635,6 +675,195 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
         ("GET", "/api/hosts") => match HostsFileManager::read_entries_from_default() {
             Ok(entries) => HttpResponse::ok_json(&entries),
             Err(e) => HttpResponse::error(500, &format!("Hosts read error: {e}")),
+        },
+
+        ("POST", "/api/hosts/add") => {
+            let mut ip = req.query.get("ip").cloned();
+            let mut hostname = req.query.get("hostname").cloned();
+
+            if let Ok(payload) = serde_json::from_slice::<HostEntryPayload>(&req.body) {
+                if let Some(i) = payload.ip {
+                    ip = Some(i);
+                }
+                if let Some(h) = payload.hostname {
+                    hostname = Some(h);
+                }
+            }
+
+            let ip = ip.unwrap_or_else(|| "127.0.0.1".to_string());
+            let hostname = hostname.unwrap_or_default().trim().to_string();
+
+            if hostname.is_empty() {
+                return HttpResponse::error(400, "Hostname is required");
+            }
+            if !HostsFileManager::is_valid_hostname(&hostname) {
+                return HttpResponse::error(400, "Invalid hostname format");
+            }
+
+            match HostsFileManager::add_or_update_default(&ip, &hostname) {
+                Ok(_) => {
+                    state
+                        .add_log(format!("Added/updated hosts entry: {ip} -> {hostname}"))
+                        .await;
+                    HttpResponse::ok_msg(&format!("Hosts entry '{hostname}' saved"))
+                }
+                Err(e) => HttpResponse::error(500, &format!("Failed to save host entry: {e}")),
+            }
+        }
+
+        ("POST", "/api/hosts/delete") => {
+            let mut hostname = req.query.get("hostname").cloned();
+            if hostname.is_none() {
+                if let Ok(payload) = serde_json::from_slice::<HostEntryPayload>(&req.body) {
+                    hostname = payload.hostname;
+                }
+            }
+
+            let hostname = hostname.unwrap_or_default().trim().to_string();
+            if hostname.is_empty() {
+                return HttpResponse::error(400, "Hostname is required");
+            }
+
+            match HostsFileManager::remove_entry_default(&hostname) {
+                Ok(_) => {
+                    state
+                        .add_log(format!("Removed hosts entry: {hostname}"))
+                        .await;
+                    HttpResponse::ok_msg(&format!("Hosts entry '{hostname}' deleted"))
+                }
+                Err(e) => HttpResponse::error(500, &format!("Failed to delete host entry: {e}")),
+            }
+        }
+
+        ("POST", "/api/hosts/toggle") => {
+            let hostname = req
+                .query
+                .get("hostname")
+                .map(|s| s.as_str())
+                .unwrap_or("")
+                .trim();
+            let enable = req.query.get("enable").map(|s| s == "true").unwrap_or(true);
+
+            if hostname.is_empty() {
+                return HttpResponse::error(400, "Hostname is required");
+            }
+
+            match HostsFileManager::toggle_entry_default(hostname, enable) {
+                Ok(_) => {
+                    state
+                        .add_log(format!("Toggled hosts entry '{hostname}': enable={enable}"))
+                        .await;
+                    HttpResponse::ok_msg(&format!("Hosts entry '{hostname}' updated"))
+                }
+                Err(e) => HttpResponse::error(500, &format!("Failed to toggle host entry: {e}")),
+            }
+        }
+
+        ("GET", "/api/hosts/raw") => match HostsFileManager::read_raw_hosts() {
+            Ok(content) => HttpResponse::ok_json(&serde_json::json!({ "content": content })),
+            Err(e) => HttpResponse::error(500, &format!("Hosts raw read error: {e}")),
+        },
+
+        ("POST", "/api/hosts/raw") => match serde_json::from_slice::<RawTextPayload>(&req.body) {
+            Ok(payload) => match HostsFileManager::save_raw_hosts(&payload.content) {
+                Ok(_) => {
+                    state.add_log("Saved raw Windows hosts file.").await;
+                    HttpResponse::ok_msg("Hosts file saved successfully")
+                }
+                Err(e) => HttpResponse::error(500, &format!("Failed to save hosts file: {e}")),
+            },
+            Err(e) => HttpResponse::error(400, &format!("Invalid JSON payload: {e}")),
+        },
+
+        ("GET", "/api/php/info") => {
+            let pcm = state.php_config_manager.lock().await;
+            HttpResponse::ok_json(&pcm.get_runtime_info())
+        }
+
+        ("GET", "/api/php/config") => {
+            let pcm = state.php_config_manager.lock().await;
+            HttpResponse::ok_json(&pcm.get_common_settings())
+        }
+
+        ("POST", "/api/php/config") => {
+            let pcm = state.php_config_manager.lock().await;
+            if let Ok(payload) = serde_json::from_slice::<PhpConfigUpdatePayload>(&req.body) {
+                if let Some(map) = payload.settings {
+                    match pcm.update_settings(&map) {
+                        Ok(_) => {
+                            state
+                                .add_log(format!(
+                                    "Updated {} PHP configuration settings.",
+                                    map.len()
+                                ))
+                                .await;
+                            return HttpResponse::ok_msg("PHP settings saved");
+                        }
+                        Err(e) => {
+                            return HttpResponse::error(
+                                500,
+                                &format!("Failed to save PHP settings: {e}"),
+                            )
+                        }
+                    }
+                }
+                if let (Some(k), Some(v)) = (payload.key, payload.value) {
+                    match pcm.update_setting(&k, &v) {
+                        Ok(_) => {
+                            state
+                                .add_log(format!("Updated PHP setting '{k}' = '{v}'."))
+                                .await;
+                            return HttpResponse::ok_msg(&format!("Setting '{k}' saved"));
+                        }
+                        Err(e) => {
+                            return HttpResponse::error(
+                                500,
+                                &format!("Failed to update setting '{k}': {e}"),
+                            )
+                        }
+                    }
+                }
+            }
+
+            let key = req.query.get("key").map(|s| s.as_str()).unwrap_or("");
+            let val = req.query.get("value").map(|s| s.as_str()).unwrap_or("");
+            if !key.is_empty() {
+                match pcm.update_setting(key, val) {
+                    Ok(_) => {
+                        state
+                            .add_log(format!("Updated PHP setting '{key}' = '{val}'."))
+                            .await;
+                        HttpResponse::ok_msg(&format!("Setting '{key}' saved"))
+                    }
+                    Err(e) => {
+                        HttpResponse::error(500, &format!("Failed to update setting '{key}': {e}"))
+                    }
+                }
+            } else {
+                HttpResponse::error(400, "Missing setting parameters")
+            }
+        }
+
+        ("GET", "/api/php/ini") => {
+            let pcm = state.php_config_manager.lock().await;
+            match pcm.get_raw_ini() {
+                Ok(content) => HttpResponse::ok_json(&serde_json::json!({ "content": content })),
+                Err(e) => HttpResponse::error(500, &format!("php.ini read error: {e}")),
+            }
+        }
+
+        ("POST", "/api/php/ini") => match serde_json::from_slice::<RawTextPayload>(&req.body) {
+            Ok(payload) => {
+                let pcm = state.php_config_manager.lock().await;
+                match pcm.save_raw_ini(&payload.content) {
+                    Ok(_) => {
+                        state.add_log("Saved raw php.ini configuration.").await;
+                        HttpResponse::ok_msg("php.ini saved successfully")
+                    }
+                    Err(e) => HttpResponse::error(500, &format!("Failed to save php.ini: {e}")),
+                }
+            }
+            Err(e) => HttpResponse::error(400, &format!("Invalid JSON payload: {e}")),
         },
 
         ("GET", "/api/php/extensions") => {
@@ -712,7 +941,9 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
             if let Some(ref proxy) = state.event_loop_proxy {
                 let _ = proxy.send_event(dotnet_windows::tray::TrayEvent::OpenDashboard);
             }
-            state.add_log("[APP] Duplicate instance launched - restored main window to foreground.").await;
+            state
+                .add_log("[APP] Duplicate instance launched - restored main window to foreground.")
+                .await;
             HttpResponse::ok_msg("Application window restored")
         }
 
@@ -819,6 +1050,40 @@ mod tests {
         };
         let res = route_request(&req, &state).await;
         assert_eq!(res.status_code, 404);
+    }
+
+    #[tokio::test]
+    async fn test_route_hosts_and_php_endpoints() {
+        let state = create_test_dashboard_state();
+
+        // 1. GET /api/hosts
+        let req = HttpRequest {
+            method: "GET".to_string(),
+            path: "/api/hosts".to_string(),
+            ..Default::default()
+        };
+        let res = route_request(&req, &state).await;
+        assert_eq!(res.status_code, 200);
+
+        // 2. GET /api/php/info
+        let req = HttpRequest {
+            method: "GET".to_string(),
+            path: "/api/php/info".to_string(),
+            ..Default::default()
+        };
+        let res = route_request(&req, &state).await;
+        assert_eq!(res.status_code, 200);
+
+        // 3. GET /api/php/config
+        let req = HttpRequest {
+            method: "GET".to_string(),
+            path: "/api/php/config".to_string(),
+            ..Default::default()
+        };
+        let res = route_request(&req, &state).await;
+        assert_eq!(res.status_code, 200);
+        let body_str = String::from_utf8(res.body).unwrap();
+        assert!(body_str.contains("memory_limit"));
     }
 
     fn create_test_dashboard_state() -> DashboardState {

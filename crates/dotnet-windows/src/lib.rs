@@ -13,7 +13,7 @@ pub mod tray;
 pub use error::{Result, WindowsError};
 pub use ip_helper::{get_active_tcp_listeners, get_owner_pid_for_port, TcpListenerEntry};
 pub use native_window::{NativeMainWindow, NativeWindowEvent};
-pub use process::{is_pid_alive, terminate_pid};
+pub use process::{elevate_self, is_elevated, is_pid_alive, terminate_pid};
 pub use registry::{broadcast_environment_change, get_system_path, get_user_path, set_user_path};
 pub use service_ctrl::{
     get_service_status, resolve_installed_service_name, start_service, start_service_elevated,
