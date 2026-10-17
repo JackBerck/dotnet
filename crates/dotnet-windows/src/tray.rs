@@ -66,13 +66,21 @@ impl SystemTray {
         let window_name: Vec<u16> = "DotnetTrayWindow\0".encode_utf16().collect();
 
         unsafe {
+            let hinstance =
+                windows_sys::Win32::System::LibraryLoader::GetModuleHandleW(std::ptr::null());
+            #[allow(clippy::manual_dangling_ptr)]
+            let mut h_icon = LoadIconW(hinstance, 1 as *const u16);
+            if h_icon.is_null() {
+                h_icon = LoadIconW(std::ptr::null_mut(), IDI_APPLICATION);
+            }
+
             let wc = WNDCLASSW {
                 style: 0,
                 lpfnWndProc: Some(tray_window_proc),
                 cbClsExtra: 0,
                 cbWndExtra: 0,
-                hInstance: std::ptr::null_mut(),
-                hIcon: LoadIconW(std::ptr::null_mut(), IDI_APPLICATION),
+                hInstance: hinstance,
+                hIcon: h_icon,
                 hCursor: std::ptr::null_mut(),
                 hbrBackground: std::ptr::null_mut(),
                 lpszMenuName: std::ptr::null(),
@@ -92,7 +100,7 @@ impl SystemTray {
                 0,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                hinstance,
                 std::ptr::null_mut(),
             );
 
@@ -108,7 +116,7 @@ impl SystemTray {
             nid.uID = 1;
             nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
             nid.uCallbackMessage = WM_TRAY_CALLBACK;
-            nid.hIcon = LoadIconW(std::ptr::null_mut(), IDI_APPLICATION);
+            nid.hIcon = h_icon;
 
             // Set tooltip
             let tooltip_u16: Vec<u16> = tooltip.encode_utf16().collect();
@@ -274,7 +282,7 @@ unsafe fn show_tray_popup_menu(hwnd: HWND) {
         menu,
         MF_STRING,
         CMD_SWITCH_PROFILE,
-        to_wide("Switch Profile (Standalone / Docker)").as_ptr(),
+        to_wide("Switch Profile (Local / Docker)").as_ptr(),
     );
     AppendMenuW(
         menu,

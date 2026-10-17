@@ -81,14 +81,27 @@ jobs:
       - name: Verify release binaries
         shell: pwsh
         run: |
+          $dirs = @("target/x86_64-pc-windows-msvc/release", "target/release")
+          $found = $null
+          foreach ($d in $dirs) {
+              if (Test-Path "$d/dotnet-cli.exe") { $found = $d; break }
+          }
+          if (-not $found) { throw "Could not find release binaries in target directories: $dirs" }
+
+          if ($found -ne "target/release") {
+              New-Item -ItemType Directory -Force -Path "target/release" | Out-Null
+              Copy-Item "$found/dotnet-cli.exe" "target/release/dotnet-cli.exe" -Force
+              Copy-Item "$found/dotnet-app.exe" "target/release/dotnet-app.exe" -Force
+          }
+
           $cli = "target/release/dotnet-cli.exe"
           $app = "target/release/dotnet-app.exe"
           if (-not (Test-Path $cli)) { throw "Missing $cli" }
           if (-not (Test-Path $app)) { throw "Missing $app" }
           $cliSize = [math]::Round((Get-Item $cli).Length / 1MB, 2)
           $appSize = [math]::Round((Get-Item $app).Length / 1MB, 2)
-          Write-Host "dotnet-cli.exe size: $cliSize MB"
-          Write-Host "dotnet-app.exe size: $appSize MB"
+          Write-Host "dotnet-cli.exe size: $cliSize MB ($cli)"
+          Write-Host "dotnet-app.exe size: $appSize MB ($app)"
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4

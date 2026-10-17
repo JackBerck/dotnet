@@ -5,7 +5,9 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dotnet - Development Environment Engine</title>
+  <title>Dotnet</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" href="/api/app/icon.png">
   <style>
     :root {
       --bg: #0b0f19;
@@ -48,20 +50,13 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
       border-bottom: 1px solid var(--border);
       margin-bottom: 1rem;
     }
-    .brand-icon {
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(135deg, var(--primary), var(--accent));
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      color: #fff;
-      font-size: 1.1rem;
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      object-fit: contain;
     }
-    .brand-title { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; }
-    .brand-version { font-size: 0.7rem; color: var(--primary); font-weight: 600; text-transform: uppercase; }
+    .brand-title { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.02em; }
     .nav { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
     .nav-btn {
       display: flex;
@@ -315,11 +310,8 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-icon">D</div>
-      <div>
-        <div class="brand-title">Dotnet</div>
-        <div class="brand-version">Rust Native Engine</div>
-      </div>
+      <img class="brand-logo" src="/api/app/icon.png" alt="Dotnet" />
+      <div class="brand-title">Dotnet</div>
     </div>
     <nav class="nav">
       <button class="nav-btn active" onclick="switchTab('services')">🖥️ Services</button>
@@ -333,8 +325,8 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     <div class="profile-switcher">
       <div class="profile-label">ACTIVE PROFILE</div>
       <select id="profile-select" class="profile-select" onchange="changeProfile(this.value)">
-        <option value="standalone">Standalone (Local DB & Web)</option>
-        <option value="docker">Docker Coexistence</option>
+        <option value="standalone">Local</option>
+        <option value="docker">Docker</option>
       </select>
     </div>
   </aside>

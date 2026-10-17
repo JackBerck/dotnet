@@ -45,8 +45,25 @@ Write-Host "      dotnet-app.exe: $AppSizeMB MB" -ForegroundColor Gray
 
 # 3. Create distribution bundle directory
 $DistDir = Join-Path $RootDir "dist\Dotnet-Rust-win-x64"
+
+# Gracefully signal running instances via HTTP exit endpoint and process stop
+try {
+    Invoke-WebRequest -Uri "http://127.0.0.1:4040/api/app/exit" -Method POST -TimeoutSec 1 -ErrorAction SilentlyContinue | Out-Null
+} catch {}
+Get-Process "dotnet-app" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
 if (Test-Path $DistDir) {
-    Remove-Item -Recurse -Force $DistDir
+    $lockedExe = Join-Path $DistDir "dotnet-app.exe"
+    if (Test-Path $lockedExe) {
+        try {
+            Remove-Item -Force $lockedExe -ErrorAction Stop
+        } catch {
+            $oldExe = Join-Path $DistDir "dotnet-app.exe.old"
+            if (Test-Path $oldExe) { Remove-Item -Force $oldExe -ErrorAction SilentlyContinue }
+            Rename-Item -Path $lockedExe -NewName "dotnet-app.exe.old" -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
 
@@ -55,6 +72,12 @@ Copy-Item $CliBin -Destination (Join-Path $DistDir "dotnet.exe")
 Copy-Item $CliBin -Destination (Join-Path $DistDir "dotnet-cli.exe")
 Copy-Item $AppBin -Destination (Join-Path $DistDir "dotnet-app.exe")
 
+if (Test-Path (Join-Path $RootDir "assets")) {
+    Copy-Item (Join-Path $RootDir "assets") -Destination $DistDir -Recurse -Force
+    if (Test-Path (Join-Path $RootDir "assets\app.ico")) {
+        Copy-Item (Join-Path $RootDir "assets\app.ico") -Destination (Join-Path $DistDir "app.ico") -Force
+    }
+}
 if (Test-Path (Join-Path $RootDir ".env.example")) {
     Copy-Item (Join-Path $RootDir ".env.example") -Destination (Join-Path $DistDir ".env.example")
 }
@@ -65,6 +88,58 @@ if (Test-Path (Join-Path $RootDir "LICENSE")) {
     Copy-Item (Join-Path $RootDir "LICENSE") -Destination $DistDir
 }
 
+# Register Start Menu shortcut for Windows Search integration
+try {
+    $ProgramsDir = [Environment]::GetFolderPath("Programs")
+    if (-not (Test-Path $ProgramsDir)) {
+        New-Item -ItemType Directory -Path $ProgramsDir -Force | Out-Null
+    }
+    $ShortcutPath = Join-Path $ProgramsDir "Dotnet.lnk"
+    $TargetExe = Join-Path $DistDir "dotnet-app.exe"
+    $IconPath = Join-Path $DistDir "app.ico"
+
+    $WshShell = New-Object -ComObject WScript.Shell
+    $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = $TargetExe
+    $Shortcut.WorkingDirectory = $DistDir
+    $Shortcut.Description = "Dotnet"
+    if (Test-Path $IconPath) {
+        $Shortcut.IconLocation = "$IconPath,0"
+    } else {
+        $Shortcut.IconLocation = "$TargetExe,0"
+    }
+    $Shortcut.Save()
+    Write-Host "      Start Menu shortcut registered: $ShortcutPath" -ForegroundColor Cyan
+} catch {
+    Write-Warning "Could not register Start Menu shortcut: $_"
+}
+
+# Register Windows Startup autostart (Background on logon)
+try {
+    $StartupDir = [Environment]::GetFolderPath("Startup")
+    if (-not (Test-Path $StartupDir)) {
+        New-Item -ItemType Directory -Path $StartupDir -Force | Out-Null
+    }
+    $StartupShortcut = Join-Path $StartupDir "Dotnet.lnk"
+    $StartupItem = $WshShell.CreateShortcut($StartupShortcut)
+    $StartupItem.TargetPath = $TargetExe
+    $StartupItem.Arguments = "--minimized"
+    $StartupItem.WorkingDirectory = $DistDir
+    $StartupItem.Description = "Dotnet"
+    if (Test-Path $IconPath) {
+        $StartupItem.IconLocation = "$IconPath,0"
+    } else {
+        $StartupItem.IconLocation = "$TargetExe,0"
+    }
+    $StartupItem.Save()
+
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Dotnet" -Value "`"$TargetExe`" --minimized" -Force
+
+    Write-Host "      Windows Startup autostart registered (Background): $StartupShortcut" -ForegroundColor Cyan
+} catch {
+    Write-Warning "Could not register Startup autostart: $_"
+}
+
 # 4. Generate zip archive
 $ZipFile = Join-Path $RootDir "dist\Dotnet-Rust-v0.1.0-win-x64.zip"
 if (Test-Path $ZipFile) {
@@ -72,7 +147,8 @@ if (Test-Path $ZipFile) {
 }
 
 Write-Host "[4/4] Creating ZIP distribution archive: $ZipFile" -ForegroundColor Yellow
-Compress-Archive -Path "$DistDir\*" -DestinationPath $ZipFile -CompressionLevel Optimal
+$ItemsToZip = Get-ChildItem -Path $DistDir | Where-Object { $_.Name -notlike "*.WebView2" -and $_.Name -notlike "*.old" } | Select-Object -ExpandProperty FullName
+Compress-Archive -Path $ItemsToZip -DestinationPath $ZipFile -CompressionLevel Optimal
 
 $ZipSizeMB = [math]::Round((Get-Item $ZipFile).Length / 1MB, 2)
 Write-Host ""

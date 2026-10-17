@@ -52,7 +52,7 @@ impl ProfileStore {
             profiles: vec![
                 ServiceProfile {
                     id: "standalone".to_string(),
-                    name: "Standalone (Local Databases & Web)".to_string(),
+                    name: "Local".to_string(),
                     service_ids: vec![
                         "mysql".into(),
                         "postgres".into(),
@@ -64,7 +64,7 @@ impl ProfileStore {
                 },
                 ServiceProfile {
                     id: "docker".to_string(),
-                    name: "Docker Coexistence (Nginx & PHP only)".to_string(),
+                    name: "Docker".to_string(),
                     service_ids: vec!["php-cgi".into(), "nginx".into()],
                     optional_service_ids: vec!["mysql".into(), "postgres".into(), "redis".into()],
                 },
@@ -85,7 +85,7 @@ impl ProfileStore {
             .find(|p| p.id.eq_ignore_ascii_case(&config.active_profile_id))
             .unwrap_or_else(|| ServiceProfile {
                 id: "standalone".into(),
-                name: "Standalone".into(),
+                name: "Local".into(),
                 service_ids: vec![],
                 optional_service_ids: vec![],
             });

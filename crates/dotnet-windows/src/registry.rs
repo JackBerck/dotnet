@@ -5,8 +5,8 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HWND};
 use windows_sys::Win32::System::Registry::{
-    RegCloseKey, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
-    HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ,
+    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY,
+    HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ, REG_SZ,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
@@ -161,6 +161,90 @@ pub fn broadcast_environment_change() -> Result<()> {
 
     if res == 0 {
         tracing::warn!("WM_SETTINGCHANGE broadcast timed out or failed (non-fatal)");
+    }
+
+    Ok(())
+}
+
+const RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Reads a command from HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+pub fn get_run_key(val_name: &str) -> Result<String> {
+    read_registry_string(HKEY_CURRENT_USER, RUN_SUBKEY, val_name)
+}
+
+/// Sets a command in HKCU\Software\Microsoft\Windows\CurrentVersion\Run (REG_SZ).
+pub fn set_run_key(val_name: &str, command: &str) -> Result<()> {
+    let subkey = to_wide(RUN_SUBKEY);
+    let val = to_wide(val_name);
+    let wide_val = to_wide(command);
+
+    let mut hkey: HKEY = std::ptr::null_mut();
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            0,
+            KEY_SET_VALUE,
+            &mut hkey,
+        )
+    };
+
+    if status != ERROR_SUCCESS {
+        return Err(WindowsError::RegistryError(status));
+    }
+
+    let byte_len = (wide_val.len() * std::mem::size_of::<u16>()) as u32;
+    let status = unsafe {
+        RegSetValueExW(
+            hkey,
+            val.as_ptr(),
+            0,
+            REG_SZ,
+            wide_val.as_ptr() as *const _,
+            byte_len,
+        )
+    };
+
+    unsafe {
+        RegCloseKey(hkey);
+    }
+
+    if status != ERROR_SUCCESS {
+        return Err(WindowsError::RegistryError(status));
+    }
+
+    Ok(())
+}
+
+/// Deletes a command from HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+pub fn delete_run_key(val_name: &str) -> Result<()> {
+    let subkey = to_wide(RUN_SUBKEY);
+    let val = to_wide(val_name);
+
+    let mut hkey: HKEY = std::ptr::null_mut();
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            0,
+            KEY_SET_VALUE,
+            &mut hkey,
+        )
+    };
+
+    if status != ERROR_SUCCESS {
+        return Err(WindowsError::RegistryError(status));
+    }
+
+    let status = unsafe { RegDeleteValueW(hkey, val.as_ptr()) };
+
+    unsafe {
+        RegCloseKey(hkey);
+    }
+
+    if status != ERROR_SUCCESS && status != 2 {
+        return Err(WindowsError::RegistryError(status));
     }
 
     Ok(())

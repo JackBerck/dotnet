@@ -314,16 +314,33 @@ fn parse_path_and_query(full_path: &str) -> (String, HashMap<String, String>) {
     }
 }
 
+const APP_ICO: &[u8] = include_bytes!("../../../assets/app.ico");
+const DOTNET_PNG: &[u8] = include_bytes!("../../../assets/dotnet.png");
+
 async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpResponse {
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") | ("GET", "/index.html") => HttpResponse::ok_html(DASHBOARD_HTML),
+
+        ("GET", "/favicon.ico") => HttpResponse {
+            status_code: 200,
+            status_text: "OK",
+            content_type: "image/x-icon",
+            body: APP_ICO.to_vec(),
+        },
+
+        ("GET", "/api/app/icon.png") | ("GET", "/assets/dotnet.png") => HttpResponse {
+            status_code: 200,
+            status_text: "OK",
+            content_type: "image/png",
+            body: DOTNET_PNG.to_vec(),
+        },
 
         ("GET", "/api/status") => {
             let p_store = state.profile_store.lock().await;
             let active_profile = p_store
                 .get_active_profile()
                 .map(|p| p.name)
-                .unwrap_or_else(|_| "Standalone".to_string());
+                .unwrap_or_else(|_| "Local".to_string());
 
             let statuses = state.service_manager.get_all_statuses().await;
             let running = statuses.iter().filter(|s| s.is_running).count();
@@ -945,6 +962,46 @@ async fn route_request(req: &HttpRequest, state: &DashboardState) -> HttpRespons
                 .add_log("[APP] Duplicate instance launched - restored main window to foreground.")
                 .await;
             HttpResponse::ok_msg("Application window restored")
+        }
+
+        ("POST", "/api/app/exit") => {
+            if let Some(ref proxy) = state.event_loop_proxy {
+                let _ = proxy.send_event(dotnet_windows::tray::TrayEvent::Exit);
+            }
+            HttpResponse::ok_msg("Exiting")
+        }
+
+        ("GET", "/api/autostart") => {
+            let enabled = dotnet_windows::AutostartManager::is_autostart_enabled();
+            let res = serde_json::json!({ "enabled": enabled });
+            HttpResponse::ok_json(&res)
+        }
+
+        ("POST", "/api/autostart") => {
+            let enable = req
+                .query
+                .get("enable")
+                .map(|s| s == "true" || s == "1")
+                .unwrap_or(true);
+
+            if enable {
+                if let Ok(exe_path) = std::env::current_exe() {
+                    let parent = exe_path.parent().unwrap_or(&exe_path);
+                    let ico = parent.join("app.ico");
+                    let ico_opt = if ico.exists() {
+                        Some(ico.as_path())
+                    } else {
+                        None
+                    };
+                    let _ = dotnet_windows::AutostartManager::enable_autostart(&exe_path, ico_opt);
+                }
+            } else {
+                let _ = dotnet_windows::AutostartManager::disable_autostart();
+            }
+
+            let enabled = dotnet_windows::AutostartManager::is_autostart_enabled();
+            let res = serde_json::json!({ "enabled": enabled, "status": "ok" });
+            HttpResponse::ok_json(&res)
         }
 
         _ => HttpResponse::error(404, "Endpoint not found"),

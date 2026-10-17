@@ -131,12 +131,12 @@ fn main() -> Result<()> {
         }
     }
 
+    // Ensure Start Menu shortcut and Windows background autostart are registered
+    ensure_system_integration();
+
     let logs = Arc::new(Mutex::new(vec![
-        format!(
-            "[{}] Dotnet Rust Native Desktop Engine started.",
-            chrono_lite()
-        ),
-        format!("[{}] Local Engine API Port: {}", chrono_lite(), args.port),
+        format!("[{}] Dotnet started.", chrono_lite()),
+        format!("[{}] Engine API Port: {}", chrono_lite(), args.port),
     ]));
 
     let service_manager = Arc::new(AppServiceManager::new(
@@ -187,8 +187,8 @@ fn main() -> Result<()> {
     let proxy = proxy_opt.expect("Proxy must be initialized in non-headless mode");
 
     // Initialize Win32 System Tray
-    let (mut tray, tray_rx) = SystemTray::create("Dotnet - Local Dev Engine")
-        .context("Failed to initialize Windows System Tray")?;
+    let (mut tray, tray_rx) =
+        SystemTray::create("Dotnet").context("Failed to initialize Windows System Tray")?;
 
     info!("System Tray initialized successfully.");
 
@@ -263,7 +263,7 @@ fn main() -> Result<()> {
 
     // Create authentic Windows desktop window
     let window = WindowBuilder::new()
-        .with_title("Dotnet - Development Environment Engine")
+        .with_title("Dotnet")
         .with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0))
         .with_min_inner_size(tao::dpi::LogicalSize::new(850.0, 600.0))
         .with_visible(!args.minimized)
@@ -277,11 +277,7 @@ fn main() -> Result<()> {
         .build(&window)
         .context("Failed to initialize embedded desktop webview")?;
 
-    let _ = tray.show_balloon(
-        "Dotnet Dev Engine",
-        "Dotnet Native Desktop Engine is active.",
-        false,
-    );
+    let _ = tray.show_balloon("Dotnet", "Dotnet is active.", false);
 
     // Run Tao Event Loop on main thread
     event_loop.run(move |event, _, control_flow| {
@@ -311,7 +307,7 @@ fn main() -> Result<()> {
                 // Minimize to system tray instead of exiting immediately
                 window.set_visible(false);
                 let _ = tray.show_balloon(
-                    "Dotnet Dev Engine",
+                    "Dotnet",
                     "Application minimized to System Tray. Click tray icon or launch Dotnet to restore.",
                     false,
                 );
@@ -357,9 +353,7 @@ fn bring_window_to_front() -> bool {
         FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
     };
 
-    let title: Vec<u16> = OsStr::new("Dotnet - Development Environment Engine\0")
-        .encode_wide()
-        .collect();
+    let title: Vec<u16> = OsStr::new("Dotnet\0").encode_wide().collect();
     unsafe {
         let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
         if !hwnd.is_null() {
@@ -382,4 +376,28 @@ fn chrono_lite() -> String {
     let mins = (secs / 60) % 60;
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", hours, mins, s)
+}
+
+fn ensure_system_integration() {
+    if let Ok(exe_path) = std::env::current_exe() {
+        let parent = exe_path.parent().unwrap_or(&exe_path);
+        let ico_candidates = [
+            parent.join("app.ico"),
+            parent.join("assets").join("app.ico"),
+            parent.join("..").join("assets").join("app.ico"),
+            parent.join("..").join("..").join("assets").join("app.ico"),
+        ];
+        let ico_path = ico_candidates.into_iter().find(|p| p.exists());
+
+        // 1. Windows Start Menu search indexing
+        let _ = dotnet_windows::ShortcutManager::create_or_update_start_menu_shortcut(
+            "Dotnet",
+            &exe_path,
+            ico_path.as_deref(),
+            "Dotnet",
+        );
+
+        // 2. Windows background autostart on boot (starts minimized to system tray)
+        let _ = dotnet_windows::AutostartManager::enable_autostart(&exe_path, ico_path.as_deref());
+    }
 }

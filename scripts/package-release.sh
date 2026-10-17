@@ -26,6 +26,8 @@ cp "$RELEASE_DIR/dotnet-cli.exe" "$DIST_DIR/dotnet.exe"
 cp "$RELEASE_DIR/dotnet-cli.exe" "$DIST_DIR/dotnet-cli.exe"
 cp "$RELEASE_DIR/dotnet-app.exe" "$DIST_DIR/dotnet-app.exe"
 
+[ -d assets ] && cp -r assets "$DIST_DIR/"
+[ -f assets/app.ico ] && cp assets/app.ico "$DIST_DIR/app.ico"
 [ -f .env.example ] && cp .env.example "$DIST_DIR/"
 [ -f README.md ] && cp README.md "$DIST_DIR/"
 [ -f LICENSE ] && cp LICENSE "$DIST_DIR/"
